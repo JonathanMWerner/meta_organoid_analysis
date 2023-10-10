@@ -1,0 +1,588 @@
+
+
+
+Starting to explore organoid datasets
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(MetBrewer)
+library(tidyr)
+library(tibble)
+library(parallel)
+library(viridis)
+library(gridExtra)
+library(grid)
+library(ComplexHeatmap)
+```
+
+
+
+organoid dataset metadata
+```{r}
+
+load('../data/seurat_objs/all_data_just_meta_seurat.Rdata')
+```
+
+Only work with the orghanoid datasets that had raw data available. All of those are CPM. There are a handful of datasets with only log(CPM), log(CPM +1), or various other normalizations available
+
+I double checked all the 'not stated' normalizations were raw counts
+```{r}
+all_sample_meta
+table(all_sample_meta$normalization)
+org_cpm_index = which(all_sample_meta$normalization %in% c('not states','raw'))
+```
+
+Get a nice bargraph of the organoid datasets with colors
+
+Color palette for the different brain regions across the datasets, mostly capturing protocol variance
+```{r}
+
+sample_region_palette = met.brewer('Renoir', n = 12)
+sample_region_palette = c('brainstem' = sample_region_palette[1],'cerebellum' = sample_region_palette[2],'cerebral' = sample_region_palette[3],'cortical' = sample_region_palette[4],
+                          'cortical_and_neural_retina' = sample_region_palette[5],'dorsal_patterned_forebrain' = sample_region_palette[6],'hypothalamic_arcuate' = sample_region_palette[7],
+                          'MGE_and_cortical' = sample_region_palette[8], 'neural_induced_blood_vessel' = sample_region_palette[9],'thalamic' = sample_region_palette[10],
+                          'vascularized_cortical' = sample_region_palette[11],'ventral_midbrain' = sample_region_palette[12])
+
+sample_region_palette
+```
+
+```{r}
+org_samp_df = all_sample_meta %>% count(sample_region) %>% arrange(desc(n))
+org_samp_df$sample_region = factor(org_samp_df$sample_region, levels = c(org_samp_df$sample_region) )
+ggplot(org_samp_df, aes(x = sample_region, y = n, fill = sample_region)) + geom_bar( stat = 'identity') +
+  scale_fill_manual(values = sample_region_palette, name = 'Organoid type') +
+  ylab('# of datasets') + xlab('Organoid type') + ggtitle('Human neural organoid scRNA-seq datasets') +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+        legend.key.size = unit(.25, 'cm'))
+
+
+ggsave(filename = 'organoid_region_num_dataset_barplot.pdf', path = '/home/werner/projects/meta_qc_organoid/code/graphs/', device = 'pdf', useDingbats = F,
+       height = 2.5 , width = 4.25 )
+```
+
+
+
+
+
+Fetal data
+```{r}
+
+
+human_fetal_dataset_names = c( 'fan_fu','poliodakis_geschwind_batch1', 'poliodakis_geschwind_batch2',
+                              'areal_GW14','areal_GW18_2','areal_GW19','areal_GW19_2','areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25')
+human_fetal_dataset_paths = list('../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata')
+
+names(human_fetal_dataset_paths)= human_fetal_dataset_names 
+human_fetal_dataset_paths
+
+```
+
+Fetal markers
+```{r}
+
+test_markers = list(
+    fan_fu = read_markers("fan_fu_fetal_class_markers.csv.gz"), 
+    poliodakis_1 = read_markers("poliodakis_batch1_fetal_class_markers.csv.gz"),
+    poliodakis_2 = read_markers("poliodakis_batch2_fetal_class_markers.csv.gz"),
+    GW14 = read_markers("areal_GW14_fetal_class_markers.csv.gz"),
+    GW18_2 = read_markers("areal_GW18_2_fetal_class_markers.csv.gz"),
+    GW19 = read_markers("areal_GW19_fetal_class_markers.csv.gz"),
+    GW19_2 = read_markers("areal_GW19_2_fetal_class_markers.csv.gz"),
+    GW20 = read_markers("areal_GW20_fetal_class_markers.csv.gz"),
+    GW20_31 = read_markers("areal_GW20_31_fetal_class_markers.csv.gz"),
+    GW20_34 = read_markers("areal_GW20_34_fetal_class_markers.csv.gz"),
+    GW25 = read_markers("areal_GW25_fetal_class_markers.csv.gz"),
+    linnarsson_GW5 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW5_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW5_point_5 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW5-5_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_1 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6_1_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_2 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6_2_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_6_1 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-6_1_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_6_2 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-6_2_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_7 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-7_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_9_1 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-9_1_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_9_2 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-9_2_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_9_3 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-9_3_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW6_point_9_4 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW6-9_4_fetal_class_markers_v2.csv.gz"), 
+    linnarsson_GW7 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW7_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW7_point_5 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW7-5_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW8_1 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW8_1_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW8_2 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW8_2_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW8_3 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW8_3_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW8_point_1 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW8-1_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW8_point_5_1 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW8-5_1_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW8_point_5_2 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW8-5_2_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW9_point_2 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW9-2_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW9_point_5 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW9-5_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW10 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW10_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW11_point_5 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW11-5_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW12 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW12_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW13 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW13_fetal_class_markers_v2.csv.gz"),
+    linnarsson_GW14 = read_markers("1_12_23_linnarsson_metaMarkers/linnarsson_GW14_fetal_class_markers_v2.csv.gz")
+    )
+
+fetal_meta_markers = make_meta_markers(test_markers, detailed_stats = TRUE)
+fetal_meta_markers
+
+
+```
+
+
+
+
+```{r}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+```
+
+
+
+
+
+Seems that two major axes of variation in organoid data is neuron vs progenitor/non neuronal and then maybe non neuronal vs progenitor/neuron
+
+check out the genes associated with the first 2 PCs for the datasets
+
+
+
+```{r}
+dataset_num =6
+load(all_sample_meta$processed_seurat_path[dataset_num])
+pca_org = DimPlot(dataset, reduction = 'pca')
+pca_org
+
+```
+
+Get some aesthetic values, colors, alphas
+Get the top X fetal markers
+```{r}
+#Get colors
+class_palette = met.brewer("Archambault", 20)
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'non-marker' = 'white')
+
+alpha_vector = c('non-marker' = .25,'Fetal GABAergic marker' = 1,'Fetal Glutamatergic marker' = 1,'Fetal Neural Progenitor marker' = 1,'Fetal Non-neuronal marker' = 1, 
+                 'Fetal Dividing Progenitor marker' = 1, 'Fetal Intermediate Progenitor marker' = 1)
+
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+
+#plotting the eigenvectors for the first 4 PCs, coloring each gene whether they are a fetal metamarker or not
+#the eigenvectors are the weight each gene is given for that principle component, visually exploring whether fetal marker sets are enriched for
+#heavily weighted genes in the first few PCs
+plot_pc_graphs = function(pc_dataframe, pc_to_plot){
+  
+  pc_dataframe$genes = factor(pc_dataframe$genes, levels = pc_dataframe$genes[order(pc_dataframe[ ,pc_to_plot])])
+  
+  g1 = ggplot(pc_dataframe, aes(x = genes, y = !!as.name(pc_to_plot), fill = marker_label, color = marker_label)) + geom_point(aes(alpha = marker_label)) +
+    scale_fill_manual(values = class_marker_palette) + scale_color_manual(values = class_marker_palette) + scale_alpha_manual(values = alpha_vector) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = 'none') + coord_cartesian(clip = 'off')
+  
+  g2 = ggplot(pc_dataframe, aes(x = marker_label, y = !!as.name(pc_to_plot), fill = marker_label)) + geom_violin(scale = 'width')+ scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+    scale_fill_manual(values = class_marker_palette) + geom_hline(yintercept = 0, color = 'red', linetype = 'dashed') +
+    theme(legend.key.height = unit(.25,'cm'),legend.key.width = unit(.25, 'cm'), legend.text = element_text(size =8), axis.text.x = element_blank(), axis.ticks.x = element_blank() )
+  
+  pc_graph = arrangeGrob(g1, g2, ncol = 2, widths = c(1,2.5))
+  return(pc_graph)
+}
+
+
+```
+
+
+
+
+Save PCA plots and the eigenvector plots for all datasets
+
+```{r}
+Sys.time()
+for(i in 1:nrow(all_sample_meta)){
+  
+  if(i %% 10 == 0){print(i); print(Sys.time())}
+  
+  dataset_num =i
+  load(all_sample_meta$processed_seurat_path[dataset_num])
+  pca_org = DimPlot(dataset, reduction = 'pca')
+  #ggsave(plot = pca_org, filename = sprintf('org_dataset_%i_pca.pdf', dataset_num), path = '/home/werner/projects/meta_qc_organoid/code/graphs/organoid_pca/', 
+  #       device = 'pdf', useDingbats = F, height = 4, width = 5)
+  
+  df_pc = as.data.frame(dataset@reductions$pca@feature.loadings[, 1:4])
+  df_pc$genes = rownames(df_pc)
+  
+  marker_label = rep('non-marker', nrow(df_pc))
+  marker_label[df_pc$genes %in% gaba_markers$gene] = 'Fetal GABAergic marker'
+  marker_label[df_pc$genes %in% glut_markers$gene] = 'Fetal Glutamatergic marker'
+  marker_label[df_pc$genes %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker'
+  marker_label[df_pc$genes %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+  marker_label[df_pc$genes %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+  marker_label[df_pc$genes %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+  df_pc$marker_label = marker_label
+  df_pc$marker_label = factor(df_pc$marker_label, levels = c('non-marker','Fetal GABAergic marker','Fetal Glutamatergic marker','Fetal Neural Progenitor marker','Fetal Non-neuronal marker',
+                                                             'Fetal Intermediate Progenitor marker','Fetal Dividing Progenitor marker'))
+  
+  
+  pc_1_graph = plot_pc_graphs(df_pc, 'PC_1')
+  pc_2_graph = plot_pc_graphs(df_pc, 'PC_2')
+  pc_3_graph = plot_pc_graphs(df_pc, 'PC_3')
+  pc_4_graph = plot_pc_graphs(df_pc, 'PC_4')
+  
+  grid_1 = arrangeGrob(pc_1_graph, pc_2_graph, top = textGrob(sprintf("Organoid dataset %i", dataset_num),gp=gpar(fontsize=15)))
+ # ggsave(plot = grid_1, filename = sprintf('pca_1_2_fetalMarker_weights_orgDataset_%i.pdf', dataset_num), path = '/home/werner/projects/meta_qc_organoid/code/graphs/organoid_pca/', 
+  #       device = 'pdf', useDingbats = F, height = 5, width = 7)
+
+  grid_2 = arrangeGrob(pc_3_graph, pc_4_graph, top = textGrob(sprintf("Organoid dataset %i", dataset_num),gp=gpar(fontsize=15)))
+  #ggsave(plot = grid_2, filename = sprintf('pca_3_4_fetalMarker_weights_orgDataset_%i.pdf', dataset_num), path = '/home/werner/projects/meta_qc_organoid/code/graphs/organoid_pca/', 
+  #       device = 'pdf', useDingbats = F, height = 5, width = 7)
+
+}
+```
+
+
+```{r}
+
+
+plot(grid_1)
+
+```
+
+
+
+
+Comparing HVG genes across organoid datasets,
+Comparing eigenvectors across organoid datasets
+Maybe thinking of a metaPCA approach
+Learn a meta-eigen space from fetal and project the organoids, vice versa
+
+
+
+Pilot experiment
+gather all the HVG genes across some datasets
+get a measure of the magnitude of the eigenvector value for each gene in PC1
+abs(eigenvector), maybe rank them, or divide by max(abs(eigenvector))
+repeat across datasets
+genes by datasets, with value being the magnitude of PC1 weights. 
+Idea is to see if genes are consistently heavily weighted across the datasets
+Is there any structure across datasets, do some always weight the same genes
+are the consistently heavily weighted genes enriched for fetal class markers?
+
+
+```{r}
+combined_hvg = c()
+
+for(i in 1:nrow(all_sample_meta)){
+
+  load(all_sample_meta$processed_seurat_path[i])
+  combined_hvg = c(combined_hvg, dataset@assays$RNA@var.features)
+}
+
+combined_hvg = unique(combined_hvg)
+#empty matrices to hold the weights of PC1 and PC2 for all the datasets
+hvg_pc1_eigenvec_matrix = matrix(nrow = length(combined_hvg), ncol = nrow(all_sample_meta))
+rownames(hvg_pc1_eigenvec_matrix) = combined_hvg
+hvg_pc2_eigenvec_matrix = matrix(nrow = length(combined_hvg), ncol = nrow(all_sample_meta))
+rownames(hvg_pc2_eigenvec_matrix) = combined_hvg
+hvg_pc3_eigenvec_matrix = matrix(nrow = length(combined_hvg), ncol = nrow(all_sample_meta))
+rownames(hvg_pc3_eigenvec_matrix) = combined_hvg
+hvg_pc4_eigenvec_matrix = matrix(nrow = length(combined_hvg), ncol = nrow(all_sample_meta))
+rownames(hvg_pc4_eigenvec_matrix) = combined_hvg
+```
+
+```{r}
+
+dim(hvg_pc1_eigenvec_matrix)
+dim(hvg_pc2_eigenvec_matrix)
+dim(hvg_pc3_eigenvec_matrix)
+dim(hvg_pc4_eigenvec_matrix)
+```
+
+
+```{r}
+
+for(i in 1:nrow(all_sample_meta)){
+
+load(all_sample_meta$processed_seurat_path[i])
+
+  #Get the eigenvector for the first PC
+  pc1_eigenvector = dataset@reductions$pca@feature.loadings[ ,'PC_1' ]
+  pc2_eigenvector = dataset@reductions$pca@feature.loadings[ ,'PC_2' ]
+  pc3_eigenvector = dataset@reductions$pca@feature.loadings[ ,'PC_3' ]
+  pc4_eigenvector = dataset@reductions$pca@feature.loadings[ ,'PC_4' ]
+  #Normalize the values, getting the magnitudes of the weights
+  norm_pc1_eigenvector = abs(pc1_eigenvector) / max(abs(pc1_eigenvector))
+  norm_pc2_eigenvector = abs(pc2_eigenvector) / max(abs(pc2_eigenvector))
+  norm_pc3_eigenvector = abs(pc3_eigenvector) / max(abs(pc3_eigenvector))
+  norm_pc4_eigenvector = abs(pc4_eigenvector) / max(abs(pc4_eigenvector))
+  #Grab the features, gene names
+  features = rownames(dataset@reductions$pca@feature.loadings)
+  #put it in the matrix
+  index = match(features, rownames(hvg_pc1_eigenvec_matrix))
+  hvg_pc1_eigenvec_matrix[index, i ] = norm_pc1_eigenvector
+  hvg_pc2_eigenvec_matrix[index, i ] = norm_pc2_eigenvector
+  hvg_pc3_eigenvec_matrix[index, i ] = norm_pc3_eigenvector
+  hvg_pc4_eigenvec_matrix[index, i ] = norm_pc4_eigenvector
+}
+```
+
+
+```{r}
+
+table(rowSums(!is.na(hvg_pc1_eigenvec_matrix)) == 1)
+table(rowSums(!is.na(hvg_pc2_eigenvec_matrix)) == 1)
+```
+
+
+
+
+
+```{r}
+Heatmap(hvg_pc1_eigenvec_matrix, cluster_rows = F, cluster_columns = F, show_row_names = F)
+Heatmap(hvg_pc2_eigenvec_matrix, cluster_rows = F, cluster_columns = F, show_row_names = F)
+Heatmap(hvg_pc3_eigenvec_matrix, cluster_rows = F, cluster_columns = F, show_row_names = F)
+Heatmap(hvg_pc4_eigenvec_matrix, cluster_rows = F, cluster_columns = F, show_row_names = F)
+```
+
+
+```{r}
+save(hvg_pc1_eigenvec_matrix, hvg_pc2_eigenvec_matrix, hvg_pc3_eigenvec_matrix, hvg_pc4_eigenvec_matrix,file = '../data/organoid_pca/org_eigenvec_matrices.Rdata' )
+```
+
+```{r}
+load('../data/organoid_pca/org_eigenvec_matrices.Rdata')
+
+```
+
+
+```{r}
+library(circlize)
+
+```
+
+Color palette for the different brain regions across the datasets, mostly capturing protocol variance
+```{r}
+
+sample_region_palette = met.brewer('Renoir', n = 12)
+sample_region_palette = c('brainstem' = sample_region_palette[1],'cerebellum' = sample_region_palette[2],'cerebral' = sample_region_palette[3],'cortical' = sample_region_palette[4],
+                          'cortical_and_neural_retina' = sample_region_palette[5],'dorsal_patterned_forebrain' = sample_region_palette[6],'hypothalamic_arcuate' = sample_region_palette[7],
+                          'MGE_and_cortical' = sample_region_palette[8], 'neural_induced_blood_vessel' = sample_region_palette[9],'thalamic' = sample_region_palette[10],
+                          'vascularized_cortical' = sample_region_palette[11],'ventral_midbrain' = sample_region_palette[12])
+
+sample_region_palette
+```
+
+
+```{r}
+#color for the weights
+col_fun = colorRamp2(c(0, .5, 1), c(inferno(3)[1], inferno(3)[2], inferno(3)[3]))
+
+#Turn NAs to 0s and filter out genes that are not present in at least ten dataset
+temp_hvg_pc_eigenvec_matrix = hvg_pc1_eigenvec_matrix
+temp_hvg_pc_eigenvec_matrix[is.na(temp_hvg_pc_eigenvec_matrix)] = 0
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[rowSums(temp_hvg_pc_eigenvec_matrix != 0) >= 10 , ]
+
+
+#filter out the non markers, just making the point that fetal markers are consistently weighted in the first PC across organoid datasets
+keep_index = rownames(temp_hvg_pc_eigenvec_matrix) %in% c(gaba_markers$gene, glut_markers$gene, nProg_markers$gene, nonN_markers$gene, intProg_markers$gene, divProg_markers$gene)
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[keep_index, ]
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(temp_hvg_pc_eigenvec_matrix))
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker' 
+
+ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+dataset_annot = HeatmapAnnotation(organoid = all_sample_meta$sample_region, 
+                                  col = list(organoid = sample_region_palette))
+
+Heatmap(temp_hvg_pc_eigenvec_matrix, cluster_rows = T, cluster_columns = T, show_row_names = F, col = col_fun, name = 'PC1 weights', 
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', left_annotation = ha, top_annotation = dataset_annot)
+
+
+pdf(file = 'graphs/organoid_pca/pc1_weight_heatmap_v2.pdf', useDingbats = F, height = 6, width = 10)
+Heatmap(temp_hvg_pc_eigenvec_matrix, cluster_rows = T, cluster_columns = T, show_row_names = F, col = col_fun, name = 'PC1 weights', 
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', left_annotation = ha, top_annotation = dataset_annot, use_raster = T)
+dev.off()
+
+
+```
+
+
+
+violin plots of PC1 weights for each class
+
+```{r}
+temp_hvg_pc_eigenvec_matrix = hvg_pc1_eigenvec_matrix
+temp_hvg_pc_eigenvec_matrix[is.na(temp_hvg_pc_eigenvec_matrix)] = 0
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[rowSums(temp_hvg_pc_eigenvec_matrix != 0) >= 10 , ]
+
+test_df = reshape2::melt(temp_hvg_pc_eigenvec_matrix)
+test_df$marker_class = rep('non-marker', nrow(test_df))
+test_df$marker_class[test_df$Var1 %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+test_df$marker_class[test_df$Var1 %in% gaba_markers$gene] = 'Fetal GABAergic marker'
+test_df$marker_class[test_df$Var1 %in% glut_markers$gene] = 'Fetal Glutamatergic marker'
+test_df$marker_class[test_df$Var1 %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker'
+test_df$marker_class[test_df$Var1 %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+test_df$marker_class[test_df$Var1 %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+
+test_df$marker_class = factor(test_df$marker_class, levels = c('Fetal Dividing Progenitor marker', 'Fetal Neural Progenitor marker', 'Fetal Glutamatergic marker',
+                                                              'Fetal Non-neuronal marker','Fetal Intermediate Progenitor marker',
+                                                               'Fetal GABAergic marker','non-marker' ))
+
+length(unique(filter(test_df, marker_class == 'Fetal GABAergic marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Glutamatergic marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Neural Progenitor marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Non-neuronal marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Intermediate Progenitor marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Dividing Progenitor marker')$Var1))
+
+ggplot(test_df, aes(x = marker_class, y = value, fill = marker_class)) + geom_violin(scale = 'width', alpha = .5) + geom_boxplot(outlier.shape = NA, width = .2) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) + scale_fill_manual(values = class_marker_palette) +
+  ylab('Organoid PC1 weights') + ggtitle('Top fetal brain markers define PC1 in organoid data')
+
+
+ggsave(filename = 'organoid_pc1_condensed_boxplots_v2.pdf', path = 'graphs/organoid_pca/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+```
+
+
+
+
+
+```{r}
+
+#color for the weights
+col_fun = colorRamp2(c(0, .5, 1), c(inferno(3)[1], inferno(3)[2], inferno(3)[3]))
+
+#Turn NAs to 0s and filter out genes that are not present in at least ten dataset
+temp_hvg_pc_eigenvec_matrix = hvg_pc2_eigenvec_matrix
+temp_hvg_pc_eigenvec_matrix[is.na(temp_hvg_pc_eigenvec_matrix)] = 0
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[rowSums(temp_hvg_pc_eigenvec_matrix != 0) >= 10 , ]
+
+
+#filter out the non markers, just making the point that fetal markers are consistently weighted in the first PC across organoid datasets
+keep_index = rownames(temp_hvg_pc_eigenvec_matrix) %in% c(gaba_markers$gene, glut_markers$gene, nProg_markers$gene, nonN_markers$gene, intProg_markers$gene, divProg_markers$gene)
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[keep_index, ]
+
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(temp_hvg_pc_eigenvec_matrix))
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker' 
+
+ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+dataset_annot = HeatmapAnnotation(organoid = all_sample_meta$sample_region, 
+                                  col = list(organoid = sample_region_palette))
+
+Heatmap(temp_hvg_pc_eigenvec_matrix, cluster_rows = T, cluster_columns = T, show_row_names = F, col = col_fun, name = 'PC2 weights', 
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', left_annotation = ha, top_annotation = dataset_annot)
+
+
+
+pdf(file = 'graphs/organoid_pca/pc2_weight_heatmap_v2.pdf', useDingbats = F, height = 6, width = 10)
+Heatmap(temp_hvg_pc_eigenvec_matrix, cluster_rows = T, cluster_columns = T, show_row_names = F, col = col_fun, name = 'P2 weights', 
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', left_annotation = ha, top_annotation = dataset_annot, use_raster = T)
+dev.off()
+
+```
+
+```{r}
+temp_hvg_pc_eigenvec_matrix = hvg_pc2_eigenvec_matrix
+temp_hvg_pc_eigenvec_matrix[is.na(temp_hvg_pc_eigenvec_matrix)] = 0
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[rowSums(temp_hvg_pc_eigenvec_matrix != 0) >= 10 , ]
+
+test_df = reshape2::melt(temp_hvg_pc_eigenvec_matrix)
+test_df$marker_class = rep('non-marker', nrow(test_df))
+test_df$marker_class[test_df$Var1 %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+test_df$marker_class[test_df$Var1 %in% gaba_markers$gene] = 'Fetal GABAergic marker'
+test_df$marker_class[test_df$Var1 %in% glut_markers$gene] = 'Fetal Glutamatergic marker'
+test_df$marker_class[test_df$Var1 %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker'
+test_df$marker_class[test_df$Var1 %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+test_df$marker_class[test_df$Var1 %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+
+test_df$marker_class = factor(test_df$marker_class, levels = c('Fetal Dividing Progenitor marker', 'Fetal Neural Progenitor marker', 'Fetal Glutamatergic marker',
+                                                              'Fetal Non-neuronal marker','Fetal Intermediate Progenitor marker',
+                                                               'Fetal GABAergic marker','non-marker' ))
+
+length(unique(filter(test_df, marker_class == 'Fetal GABAergic marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Glutamatergic marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Neural Progenitor marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Non-neuronal marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Intermediate Progenitor marker')$Var1))
+length(unique(filter(test_df, marker_class == 'Fetal Dividing Progenitor marker')$Var1))
+
+ggplot(test_df, aes(x = marker_class, y = value, fill = marker_class)) + geom_violin(scale = 'width', alpha = .5) + geom_boxplot(outlier.shape = NA, width = .2) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) + scale_fill_manual(values = class_marker_palette) +
+  ylab('Organoid PC2 weights') + ggtitle('Top fetal brain markers define pc2 in organoid data')
+
+
+ggsave(filename = 'organoid_pc2_condensed_boxplots_v2.pdf', path = 'graphs/organoid_pca/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

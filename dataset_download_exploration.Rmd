@@ -1,0 +1,1569 @@
+
+
+
+
+Notes on bulk dowload of GEO data for the organoid human single cell RNA-seq datasets
+
+Initial exploration of cell numbers and metadata
+
+
+Thinking of starting with just the 10X datasets, usually have the .barcodes, .features, .matrix files available all in the same format.
+Additionally just start with the datasets that have metadata, will most likely be only a handful
+
+GEO ftp structure
+
+https://ftp.ncbi.nlm.nih.gov/geo/series/GSE180nnn/GSE180122/suppl/GSE180122_C9_batch2_data.csv.gz
+
+For a GEO accession number, in this case the GSE180122, need to replace the last 3 digits with nnn to get to the project directory. In the suppl subdirectory, should have a .tar or .gz file that contains the zipped data for all the samples in this project. Download that file and unzip in the dataset directory on Rugen2
+
+
+Individual scRNA-seq experiments should be in their own directories and if 10X output, easiest to create symlinks to generate the barcodes.tsv.gz, features.tsv.gz, and matrix.mtx.gz files, these are what is expected from Seurat. They also need to be zipped.
+
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(ggridges)
+library(gridExtra)
+library(MetBrewer)
+library(parallel)
+#library(ggExtra)
+library(Matrix)
+```
+
+
+
+
+
+
+Get the list of datasets
+make a dataframe with the dataset metadata, droplet or plate, cellranger output or expression matrix, normalizations present
+
+```{r}
+
+datasets = list.files(path = '/home/werner/projects/meta_qc_organoid/datasets')
+dataset_paths = list.dirs(path = '/home/werner/projects/meta_qc_organoid/datasets', recursive = F)[2:(length(datasets) + 1)]  #Excluding the .. directory
+
+
+#droplet or plate
+seq_method = c('10X','Fluidigm_C1', '10X', 'Fluidigm_C1', '10X', '10X', 'plate_nuclei', '10X', '10X', '10X', '10X', '10X', '10X', 'Dropseq', '10X', '10X', '10X', '10X', '10X', '10X', 
+               '10X', 'Fluidigm_C1', 'Dropseq', '10X' )
+#10X output or expression matrix
+data_output = c('10X', 'matrix', '10X', 'matrix', 'matrix', 'matrix', 'matrix', '10X', 'matrix', '10X', '10X', '10X', '10X', 'matrix', '10X', 'matrix', '10X', 'matrix', 'matrix', '10X',
+                '10X', 'matrix', 'matrix', '10X')
+#any normalizations present, raw, TPM, CPM, log transformed, not stated
+normalizations = c('not stated', 'log(CPM + 1)', 'not stated', 'log(CPM + 1)', 'log(CPM)', 'seurat_default', 'raw', 'not stated', 'raw', 'not stated', 'raw', 'not stated', 'raw', 'raw',
+                   'not stated', 'not stated', 'not stated', 'raw', 'seurat_default', 'not stated', 'not stated', 'FPKM', 'unspecified normalization', 'raw')
+#Random notes
+misc = c(NA, NA, NA, NA, NA, 'may have UMI number regressed out', NA, NA, 'Already filtered cells', 'has metadata', NA, 'may have mitochondrial filtering', NA, NA, NA, NA, NA, 'Cells may already be filtered', 'Cells may already be filtered', 'doublet removal', 'Cells may already be filtered', NA, NA, NA)
+
+dataset_meta = data.frame(dataset = datasets, seq_method = seq_method, data_output = data_output, normalization = normalizations, notes = misc)
+dataset_meta
+
+```
+
+
+
+Sample metadata
+Get the list of all individual scRNAseq experiments, which dataset they belong to, and whether they are control, treated, mutant, ect samples
+
+```{r}
+
+sample_ids = c('GSM2867931','GSM2867932','GSM2867933','GSM2867934','GSM2867935','GSM2867936','GSM2867937','GSE113931_RGcounts.txt','GSE122342',
+               'GSE124299_PrimaryOrganoidAndPublishedCPM.txt','GSE129519_expression_11a.6mon.txt','GSE129519_expression_HUES66.3mon.txt',
+               'GSE129519_expression_PGP1.3mon.txt','GSE129519_expression_PGP1.6mon.txt','GSE129519_expression_GM.6mon.txt','GSE129519_expression_PGP1.3mon.batch2.txt',
+               'GSE129519_expression_PGP1.6mon.batch3.txt', 'GSE131094_matrix.txt', 'GSM4094681_C1_150d_fseq12BC77_S2.deg.txt', 'GSM4306931', 'GSM4306932', 'GSM4306933', 'GSM4306934', 
+               'GSM4314535_brainstem_10x_mat_count_qc.csv', 'GSM4524697','GSM4524699', 'GSM4750931', 'GSM4750932', 'GSM4769380','GSM4769381','GSM4769382','GSM4769383','GSM4769384' ,
+               'GSM4769385', 'GSM4996460', 'GSM4996461', 'GSM4996462', 'GSM4996463','GSM4996689_DGE67anew.txt', 'GSM4996690_DGE67bnew.txt', 'GSM4996691_DGE69new.txt', 
+               'GSM4996692_DGE68new.txt', 'GSM4996693_DGE70new.txt', 'GSM4996694_DGE66new.txt', 'GSM4996695_DGE71new.txt', 'GSM4996696_DGE7374.txt', 'GSM4996697_DGE7778.txt', 
+               'GSM4996698_DGE7576.txt', 'GSM4996699_DGE7980.txt', 'GSM4996700_DGE72.txt', 'GSM4996701_DGE81.txt', 'GSM5005486', 'GSM5005487', 'GSM5005488', 
+               'GSM5136264_12standardorgday60.csv','GSM5136274_2standardorgday90.csv','GSM5136255_1standardorgday15.csv','GSM5136265_3standardorgday30.csv',
+               'GSM5136275_SilkDay30-06silk.csv','GSM5136256_2standardorgday15.csv','GSM5136266_2standardorgday30.csv','GSM5136276_SilkDay30-07silk.csv',
+               'GSM5136257_5standardorgday30.csv','GSM5136267_1standardorgday120.csv','GSM5136277_SilkDay30-08silk.csv','GSM5136258_14standardorgday60.csv',
+               'GSM5136268_2standardorgday120.csv','GSM5136278_SilkDay30-09silk.csv','GSM5136259_16standardorgday60.csv','GSM5136269_3standardorgday120.csv',
+               'GSM5136279_SilkDay30-10silkLam.csv','GSM5136260_15standardorgday60.csv','GSM5136270_4standardorgday120.csv','GSM5136280_SilkDay30-11silkLam.csv',
+               'GSM5136261_1standardorgday30.csv','GSM5136271_5standardorgday120.csv','GSM5136281_SilkDay30-12silkLam.csv','GSM5136262_13standardorgday60.csv',
+               'GSM5136272_6standardorgday120.csv','GSM5136263_4standardorgday30.csv','GSM5136273_1standardorgday90.csv', 'GSM5221533', 'GSM5221534', 
+               'GSM5289680_Raw_gene_counts_matrix.txt', 'GSE180122_C9_batch1_data.csv', 'GSE180122_C9_batch2_data.csv', 'GSM5478754','GSM5478755','GSM5478756',
+               'GSM5587100', 'GSM5587101','GSM5587102','GSM5587103','GSM5587104','GSM5587105','GSE75140_hOrg.fetal.master.data.frame.txt','GSM2295946_dge.3m.csv',
+               'GSM2295945_dge.6m.csv', 'GSE98201')
+
+belongs_dataset = c('GSE106245','GSE106245','GSE106245','GSE106245','GSE106245','GSE106245','GSE106245', 'GSE113931','GSE122342','GSE124299', 'GSE129519', 'GSE129519', 'GSE129519',
+                    'GSE129519', 'GSE129519', 'GSE129519', 'GSE129519', 'GSE131094', 'GSE137941', 'GSE145122', 'GSE145122', 'GSE145122', 'GSE145122', 'GSE145306',
+                    "GSE150153","GSE150153", "GSE157019", "GSE157019",'GSE157525','GSE157525','GSE157525','GSE157525','GSE157525','GSE157525',"GSE164089","GSE164089",
+                    "GSE164089","GSE164089",'GSE164102','GSE164102','GSE164102','GSE164102','GSE164102','GSE164102','GSE164102','GSE164102','GSE164102','GSE164102','GSE164102',
+                    'GSE164102','GSE164102', 'GSE164268', 'GSE164268', 'GSE164268','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323',
+                    'GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323',
+                    'GSE168323','GSE168323','GSE168323','GSE168323','GSE168323','GSE168323', 'GSE171263', 'GSE171263', "GSE174232", 'GSE180122', 'GSE180122', 'GSE180945',
+                    'GSE180945','GSE180945','GSE184409','GSE184409','GSE184409','GSE184409','GSE184409','GSE184409',"GSE75140","GSE86153","GSE86153", 'GSE98201')
+
+normalizations = vector(mode = 'character', length = length(belongs_dataset))
+
+for(i in 1:length(dataset_meta$dataset)){
+  
+  index = belongs_dataset == dataset_meta$dataset[i]
+  normalizations[index] = dataset_meta$normalization[i]
+  
+}
+
+
+condition = c('wk01', 'wk01', 'wk02', 'wk02', 'wk00', 'wk05', 'wk05', 'normal', 'normal', 'mixed species','11a_6mon', 'HUESS66_3mon', 'PGP1_3mon', 'PGP1_6mon', 'GM_6mon', 'PGP1_3mon_batch2', 'PGP1_6mon_batch3', 'normal_timeseries', 'normal', 'normal', 'normal', '22q11.2DS', '22q11.2DS', 'normal', 'Matrigel-encapsualted','unencapsulated', 
+              'day_93','day_140', 'normal', 'normal', 'normal', 'SMARCB1_KD', 'SMARCB1_KD', 'SMARCB1_KD', 'normal', 'normal_serum_treated', 'AD', 'AD_serum_treated','20day',
+              '20day','20day','20day','20day','20day','20day','40day','40day','40day','40day','40day','40day', 'NEUROD1_induction_45days','NEUROD1_induction_15days',
+              'no_NEUROD1_induction', 'day60', 'day90', 'day15', 'day30', 'silk_treated_day30', 'day15', 'day30','silk_treated_day30', 'day30', 'day120', 'silk_treated_day30','day60', 
+              'day120', 'silk_treated_day30', 'day60', 'day120', 'silk_treated_day30', 'day60', 'day120', 'silk_treated_day30', 'day30', 'day120', 'silk_treated_day30', 'day60', 
+              'day120', 'day30', 'day90', 'SETBP1_WT_D686D','SETBP1_Mut_D868N', 'normal', 'normal_mutant_mix', 'normal_mutant_mix','normal','normal','normal','orbital_mixing',
+              'orbital_mixing','orbital_mixing','vertical_mixing','vertical_mixing','vertical_mixing', 'normal','3mon', '6mon', 'normal_timeseries')
+
+treated = c('normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal',
+            'normal','normal','treated','treated','normal','normal','normal','normal','normal','normal','normal','normal','treated','treated','treated','normal','treated','treated','treated',
+            'normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal',
+            'normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal',
+            'normal','normal','normal','normal','treated','normal','treated','treated','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal',
+            'normal','normal')
+
+paths = '/home/werner/projects/meta_qc_organoid/datasets/'
+paths = paste(paths, belongs_dataset, sep = '')
+paths = paste(paths, sample_ids, sep = '/')
+
+method = c('10X','10X','10X','10X','10X','10X','10X', 'FluidigmC1', '10X', 'FluidigmC1','10X','10X','10X','10X','10X','10X','10X','10X', 'plate-based','10X','10X','10X','10X','10X','10X','10X',
+           '10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq','Dropseq',
+           'Dropseq','Dropseq','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X',
+           '10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X','10X', 'FluidigmC1','Dropseq','Dropseq','10X')
+
+region = c('cortical','cortical','cortical','cortical','cortical','cortical','cortical', 'cerebral', 'thalamic', 'cerebral','dorsal_patterned_forebrain','dorsal_patterned_forebrain',
+           'dorsal_patterned_forebrain','dorsal_patterned_forebrain','dorsal_patterned_forebrain','dorsal_patterned_forebrain','dorsal_patterned_forebrain','vascularized_cortical', 
+           'cortical','cortical','cortical','cortical','cortical','brainstem','cerebellum','cerebellum','cerebral','cerebral','cerebral','cerebral','cerebral','cerebral','cerebral',
+           'cerebral','cerebral','cerebral','cerebral','cerebral','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate',
+           'hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate','hypothalamic_arcuate',
+           'hypothalamic_arcuate','neural_induced_blood_vessel','neural_induced_blood_vessel','neural_induced_blood_vessel','ventral_midbrain','ventral_midbrain','ventral_midbrain',
+           'ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain',
+           'ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain',
+           'ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','ventral_midbrain','cerebral','cerebral','cortical_and_neural_retina',
+           'cortical','cortical','cortical','cortical','cortical','cerebral','cerebral','cerebral','cerebral','cerebral','cerebral','cerebral','cerebral','cerebral','MGE_and_cortical')
+
+length(sample_ids)
+length(belongs_dataset)
+length(condition)
+length(treated)
+length(region)
+length(method)
+length(normalizations)
+
+sample_meta = data.frame(sample_id = sample_ids, belongs_dataset = belongs_dataset, condition = condition, treated = treated, normalization = normalizations, 
+                         region = region, method = method, file_path = paths)
+
+sample_meta
+```
+
+
+
+
+
+Some of the experiments are the feature, barcodes, matrix files and some are just an expression matrix
+
+Will need to load up into Seurat with the corresponding correct functions
+
+Try loading in a few
+
+
+```{r}
+index_10X = dataset_meta$data_output == '10X' 
+
+datasets_10X = dataset_meta$dataset[index_10X]
+dataset_meta$notes[index_10X]
+dataset_meta$normalization[index_10X]
+
+samples_10X = sample_meta$sample_id[sample_meta$belongs_dataset %in% datasets_10X]
+samples_10X_paths = sample_meta$file_path[sample_meta$belongs_dataset %in% datasets_10X]
+samples_10X_condition = sample_meta$condition[sample_meta$belongs_dataset %in% datasets_10X]
+samples_10X_treated = sample_meta$treated[sample_meta$belongs_dataset %in% datasets_10X]
+samples_10X_normalization = sample_meta$normalization[sample_meta$belongs_dataset %in% datasets_10X]
+samples_10X_region = sample_meta$region[sample_meta$belongs_dataset %in% datasets_10X]
+samples_10X_method = sample_meta$method[sample_meta$belongs_dataset %in% datasets_10X]
+
+samples_10X_condition
+samples_10X_treated
+samples_10X_region
+samples_10X_method
+samples_10X_normalization
+```
+
+
+```{r}
+#Function to load up the datasets with 10X expected output
+load_10X_output_dataset = function(file_path, sample_name){
+  data = Read10X(data.dir = file_path)
+  seurat_object = CreateSeuratObject(counts = data, project = sample_name )
+  return(seurat_object)
+}
+
+```
+
+
+```{r}
+num_samples = length(samples_10X)
+seurat_list = vector(mode = 'list', length = num_samples )
+
+```
+
+13 and 14 not good
+
+```{r}
+for(i in 1:num_samples){
+  print(i)
+  seurat_list[[i]] = load_10X_output_dataset(samples_10X_paths[i], samples_10X[i])
+}
+
+
+```
+Manually load up the Seurat objects for the GSE150153 dataset
+13 '/home/werner/projects/meta_qc_organoid/datasets/GSE150153/GSM4524697/GSM4524697_NAY6153A1_125.rds'
+14 '/home/werner/projects/meta_qc_organoid/datasets/GSE150153/GSM4524699/GSM4524699_NAY6153A2_678.rds'
+```{r}
+
+temp = readRDS('/home/werner/projects/meta_qc_organoid/datasets/GSE150153/GSM4524697/GSM4524697_NAY6153A1_125.rds')
+temp = UpdateSeuratObject(object = temp)
+seurat_list[[13]] = temp
+
+temp = readRDS('/home/werner/projects/meta_qc_organoid/datasets/GSE150153/GSM4524699/GSM4524699_NAY6153A2_678.rds')
+temp = UpdateSeuratObject(object = temp)
+seurat_list[[14]] = temp
+```
+
+```{r}
+sample_num_cells = unlist(lapply(seurat_list, ncol))
+sample_num_features = unlist(lapply(seurat_list, nrow))
+sample_num_cells
+```
+
+
+Something is off with the data sets that have 13 million or 6 million, there's a bunch of barcodes with no or little expression, filter out those to decrease the size of the objects
+```{r}
+seurat_list[[30]] = subset(seurat_list[[30]], subset = nCount_RNA >= 10)
+seurat_list[[31]] = subset(seurat_list[[31]], subset = nCount_RNA >= 10)
+```
+
+```{r}
+sample_num_cells = unlist(lapply(seurat_list, ncol))
+sample_num_features = unlist(lapply(seurat_list, nrow))
+sample_num_cells
+```
+
+
+Current 10X sample cell number info
+
+```{r}
+
+seurat_list_index = 1:length(seurat_list)
+
+sample_10X_meta = data.frame(list_index = seurat_list_index, sample_ids = samples_10X, sample_condition = samples_10X_condition, sample_treatment = samples_10X_treated, 
+                             num_cells = sample_num_cells, num_features = sample_num_features, normalization = samples_10X_normalization,
+                             sample_region = samples_10X_region, sample_method = samples_10X_method,
+                             sample_paths = samples_10X_paths)
+sample_10X_meta
+
+
+```
+
+
+Save the loaded up Seurat objects and metadata
+
+```{r}
+save(seurat_list, sample_10X_meta, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/raw_10X_seurat.Rdata')
+
+```
+
+
+
+```{r}
+
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/raw_10X_seurat.Rdata')
+
+```
+
+```{r}
+sample_10X_meta
+
+```
+
+
+```{r}
+
+seurat_list[[41]][[]]
+
+```
+
+```{r}
+
+seurat_list[[41]][["percent.mt"]] = PercentageFeatureSet(seurat_list[[41]], pattern = "^MT-")
+VlnPlot(seurat_list[[41]], features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+
+#####################
+Load up the datasets that are already expression matrices, get their cell numbers
+####################
+
+```{r}
+matrix_datasets = dataset_meta$dataset[dataset_meta$data_output == 'matrix']
+
+```
+
+```{r}
+
+index_matrix = dataset_meta$data_output == 'matrix' 
+
+datasets_matrix = dataset_meta$dataset[index_matrix]
+dataset_meta$notes[index_matrix]
+dataset_meta$normalization[index_matrix]
+
+samples_matrix = sample_meta$sample_id[sample_meta$belongs_dataset %in% datasets_matrix]
+samples_matrix_paths = sample_meta$file_path[sample_meta$belongs_dataset %in% datasets_matrix]
+samples_matrix_condition = sample_meta$condition[sample_meta$belongs_dataset %in% datasets_matrix]
+samples_matrix_treated = sample_meta$treated[sample_meta$belongs_dataset %in% datasets_matrix]
+samples_matrix_normalization = sample_meta$normalization[sample_meta$belongs_dataset %in% datasets_matrix]
+samples_matrix_region = sample_meta$region[sample_meta$belongs_dataset %in% datasets_matrix]
+samples_matrix_method = sample_meta$method[sample_meta$belongs_dataset %in% datasets_matrix]
+
+samples_matrix_condition
+samples_matrix_treated
+samples_matrix_region
+samples_matrix_method
+samples_matrix_normalization
+
+```
+
+```{r}
+#Function to load up the datasets with matrix expected output
+load_matrix_output_dataset = function(file_path, sample_name){
+  
+  data = fread(file_path)
+  feature_names = data[[1]]
+  data = data[ ,2:dim(data)[2]]
+  data = as.sparse(data)
+  rownames(data) = feature_names
+  seurat_object = CreateSeuratObject(counts = data, project = sample_name)
+
+  return(seurat_object)
+}
+
+```
+
+
+```{r}
+num_samples = length(samples_matrix)
+seurat_list_matrix = vector(mode = 'list', length = num_samples )
+num_samples
+```
+
+```{r}
+samples_matrix_paths
+
+```
+
+
+```{r}
+for(i in 1:num_samples){
+  print(i)
+  seurat_list_matrix[[i]] = load_matrix_output_dataset(samples_matrix_paths[i], samples_matrix[i])
+}
+
+
+```
+
+
+
+```{r}
+sample_num_cells_matrix = unlist(lapply(seurat_list_matrix, ncol))
+sample_num_features_matrix = unlist(lapply(seurat_list_matrix, nrow))
+sample_num_cells_matrix
+length(sample_num_cells_matrix)
+```
+
+
+Current 10X sample cell number info
+
+```{r}
+
+seurat_list_index = 1:length(seurat_list_matrix)
+
+sample_matrix_meta = data.frame(list_index = seurat_list_index, sample_ids = samples_matrix, sample_condition = samples_matrix_condition, sample_treatment = samples_matrix_treated, 
+                             num_cells = sample_num_cells_matrix, num_features = sample_num_features_matrix, normalization = samples_matrix_normalization,
+                             sample_region = samples_matrix_region, sample_method = samples_matrix_method,
+                             sample_paths = samples_matrix_paths)
+sample_matrix_meta
+
+
+```
+
+
+
+```{r}
+seurat_list_matrix[[58]]
+
+```
+
+
+
+```{r}
+save(seurat_list_matrix,sample_matrix_meta, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/raw_matrix_seurat.Rdata')
+
+```
+
+```{r}
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/raw_matrix_seurat.Rdata')
+
+```
+
+
+
+Merge the metadata and get summary cell numbers for the datasets, stratify by datasets that have mutant data or normal
+
+
+```{r}
+
+original_input = c(rep('10X', length = dim(sample_10X_meta)[1]), rep('matrix', length = dim(sample_matrix_meta)[1]))
+
+all_sample_meta = rbind(sample_10X_meta,sample_matrix_meta)
+all_sample_meta$original_input = original_input
+all_sample_meta
+```
+
+```{r}
+table(all_sample_meta$sample_region)
+
+
+bar_plot_obj = table(all_sample_meta$sample_region)[order(table(all_sample_meta$sample_region))]
+#pdf(file = '/home/werner/projects/meta_qc_organoid/code/graphs/organoid_region_num_dataset_barplot.pdf', height = 6, width = 8, useDingbats = F)
+par(mar = c(13,4,2,1))
+barplot(bar_plot_obj, las = 2, ylab = 'Number of scRNA-seq datasets')
+#dev.off()
+```
+
+
+```{r}
+
+region_colors = c('brainstem' = 'dodgerblue', 'cerebellum' = 'dodgerblue3', 'cerebral' = 'deepskyblue', 'cortical' = 'cyan3', 'cortical_and_neural_retina' = 'cornflowerblue', 
+                  'dorsal_patterned_forebrain' = 'cadetblue1', 'hypothalamic_arcuate' = 'aquamarine', 'MGE_and_cortical' = 'lightblue', 
+                  'neural_induced_blood_vessel' = 'lightskyblue','thalamic' = 'mediumaquamarine', 'vascularized_cortical' ='royalblue',
+                  'ventral_midbrain' = 'skyblue2')
+
+
+
+
+ignore = c('GSM5221533','GSM5221534') #Weird data set with millions of empty barcodes, cell numbers not likely to be close to useable cells
+index = !all_sample_meta$sample_ids %in% ignore
+ggplot(all_sample_meta[index, ], aes(x = reorder(sample_ids,num_cells), y = num_cells)) + geom_bar(stat = 'identity', color = 'black') +
+  xlab('scRNA-seq organoid datasets') +
+  scale_y_continuous(name="log10( Number of cells )",trans = 'log10') + facet_wrap('sample_treatment', scales = 'free') +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.x = element_blank())
+ggsave(filename = 'num_cell_per_dataset_barplot.pdf', device = 'pdf', path = '/home/werner/projects/meta_qc_organoid/code/graphs/', useDingbats = F, 
+       height = 4, width = 10)
+
+ggplot(all_sample_meta[index, ], aes(x = reorder(sample_region,num_cells), y = num_cells)) + geom_bar(stat = 'identity', color = 'black') +
+  xlab('scRNA-seq organoid datasets') +
+  scale_y_continuous(name="log10( Number of cells )",trans = 'log10') +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.text.x = element_text(angle = 90, vjust = .5, hjust = 1))
+
+```
+
+
+save all the data and the metadata together
+
+```{r}
+
+all_sample_datasets = c(seurat_list, seurat_list_matrix)
+length(all_sample_datasets)
+```
+
+Trying to normalize, scale, and work with all the datasets at once takes up too much memory, plus some idividual datasets are huge, some are wacky.
+Save each dataset as it's own .Rdata object
+Will need to load in each dataset separately, work with it, and then save it again
+
+```{r}
+seurat_object_paths = paste(all_sample_meta$sample_ids, '_seurat.Rdata', sep = '')
+seurat_object_paths = paste('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/', seurat_object_paths,sep='')
+all_sample_meta$unprocessed_seurat_path = seurat_object_paths
+
+all_sample_meta
+```
+
+Get file paths for the eventual processed seurat objects
+
+```{r}
+seurat_object_paths = paste(all_sample_meta$sample_ids, '_seurat_processed.Rdata', sep = '')
+seurat_object_paths = paste('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/', seurat_object_paths,sep='')
+all_sample_meta$processed_seurat_path = seurat_object_paths
+
+all_sample_meta
+```
+
+
+
+
+Save each individual dataset
+```{r}
+for(i in 1:length(all_sample_datasets)){
+  dataset = all_sample_datasets[[i]]
+  save(dataset, file = all_sample_meta$unprocessed_seurat_path[i])
+}
+```
+
+```{r}
+length(all_sample_datasets)
+
+```
+
+
+```{r}
+save(all_sample_datasets,all_sample_meta, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/all_data_seurat.Rdata')
+
+```
+
+```{r}
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/all_data_seurat.Rdata')
+
+```
+
+
+```{r}
+
+save(all_sample_meta, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/all_data_just_meta_seurat.Rdata')
+
+```
+
+
+```{r}
+
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/all_data_just_meta_seurat.Rdata')
+
+```
+
+```{r}
+all_sample_meta
+
+```
+
+##############
+Temp analysis for the additional GSE190815 from the Pasca lab, available as seurat objects
+has raw data and three batches for each object. Split by batch and filter and normalize
+##############
+
+
+```{r}
+
+temp = readRDS('../datasets/GSE190815/GSE190815_hCS_processed_SeuratObject.rds')
+hCS_pasca = UpdateSeuratObject(object = temp)
+hCS_pasca
+
+
+
+temp = readRDS('../datasets/GSE190815/GSE190815_t-hCS_processed_SeuratObject.rds')
+trans_hCS_pasca = UpdateSeuratObject(object = temp)
+trans_hCS_pasca
+
+```
+```{r}
+#table(hCS_pasca$orig.ident)
+#hCS_pasca@assays$RNA@data[1:50, 1:50]
+hist(hCS_pasca$nCount_RNA)
+hist(hCS_pasca$nFeature_RNA)
+#table(trans_hCS_pasca$orig.ident)
+#trans_hCS_pasca@assays$RNA@data[1:50, 1:50]
+hist(trans_hCS_pasca$human.counts)
+hist(trans_hCS_pasca$human.genes)
+
+
+#Set default assay to RNA
+DefaultAssay(hCS_pasca)  <- 'RNA'
+hCS_pasca
+
+DefaultAssay(trans_hCS_pasca)  <- 'RNA'
+trans_hCS_pasca
+```
+
+```{r}
+
+#Filter cells, these datasets have the percent.human.mt 
+hCS_pasca = subset(hCS_pasca, subset = percent.human.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+all.genes <- rownames(hCS_pasca)
+
+hCS_pasca$orig.ident = factor(hCS_pasca$orig.ident)
+
+# split the dataset into a list of seurat oobbjects by batch
+pasca.list <- SplitObject(hCS_pasca, split.by = "orig.ident")
+# normalize and process each dataset independently
+pasca.list <- lapply(X = pasca.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+    x <- ScaleData(x , features = all.genes, verbose = F)
+    x <- RunPCA(x, features = VariableFeatures(object = x), verbose = F)
+    x <- RunUMAP(x, dims = 1:20, verbose = F)
+})
+
+
+lapply(X = pasca.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'orig.ident')
+})
+lapply(X = pasca.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'subclass_label')
+})
+
+lapply(X = pasca.list, FUN = function(x) {
+  ncol(x)
+})
+
+
+pasca_org_batch1 = pasca.list[[1]]
+file_name = '../data/seurat_objs/individual/non_trans_pasca_org_batch_1_seurat_processed.Rdata'
+save(pasca_org_batch1, file = file_name)
+
+pasca_org_batch2 = pasca.list[[2]]
+file_name = '../data/seurat_objs/individual/non_trans_pasca_org_batch_2_seurat_processed.Rdata'
+save(pasca_org_batch2, file = file_name)
+
+pasca_org_batch3 = pasca.list[[3]]
+file_name = '../data/seurat_objs/individual/non_trans_pasca_org_batch_3_seurat_processed.Rdata'
+save(pasca_org_batch3, file = file_name)
+
+
+#Do the full dataset
+
+hCS_pasca <- NormalizeData(hCS_pasca, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+hCS_pasca <- FindVariableFeatures(hCS_pasca, selection.method = "vst", nfeatures = 2000, verbose = F)
+hCS_pasca <- ScaleData(hCS_pasca , features = all.genes, verbose = F)
+hCS_pasca <- RunPCA(hCS_pasca, features = VariableFeatures(object = hCS_pasca), verbose = F)
+hCS_pasca <- RunUMAP(hCS_pasca, dims = 1:20, verbose = F)
+DimPlot(hCS_pasca, reduction = 'umap', group.by = 'orig.ident')
+DimPlot(hCS_pasca, reduction = 'umap', group.by = 'subclass_label')
+
+file_name = '../data/seurat_objs/individual/non_trans_pasca_org_full_seurat_processed.Rdata'
+save(hCS_pasca, file = file_name)
+```
+
+
+```{r}
+
+#Filter cells, these datasets have the percent.human.mt 
+trans_hCS_pasca = subset(trans_hCS_pasca, subset = percent.human.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+all.genes <- rownames(trans_hCS_pasca)
+
+trans_hCS_pasca$orig.ident = factor(trans_hCS_pasca$orig.ident)
+# split the dataset into a list of seurat oobbjects by batch
+trans_pasca.list <- SplitObject(trans_hCS_pasca, split.by = "orig.ident")
+# normalize and process each dataset independently
+trans_pasca.list <- lapply(X = trans_pasca.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+    x <- ScaleData(x , features = all.genes, verbose = F)
+    x <- RunPCA(x, features = VariableFeatures(object = x), verbose = F)
+    x <- RunUMAP(x, dims = 1:20, verbose = F)
+})
+
+
+lapply(X = trans_pasca.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'orig.ident')
+})
+lapply(X = trans_pasca.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'subclass_label')
+})
+
+lapply(X = trans_pasca.list, FUN = function(x) {
+  ncol(x)
+})
+
+
+trans_pasca_org_batch1 = trans_pasca.list[[1]]
+file_name = '../data/seurat_objs/individual/trans_pasca_org_batch_1_seurat_processed.Rdata'
+save(trans_pasca_org_batch1, file = file_name)
+
+trans_pasca_org_batch2 = trans_pasca.list[[2]]
+file_name = '../data/seurat_objs/individual/trans_pasca_org_batch_2_seurat_processed.Rdata'
+save(trans_pasca_org_batch2, file = file_name)
+
+trans_pasca_org_batch3 = trans_pasca.list[[3]]
+file_name = '../data/seurat_objs/individual/trans_pasca_org_batch_3_seurat_processed.Rdata'
+save(trans_pasca_org_batch3, file = file_name)
+
+#Do the full dataset
+trans_hCS_pasca <- NormalizeData(trans_hCS_pasca, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+trans_hCS_pasca <- FindVariableFeatures(trans_hCS_pasca, selection.method = "vst", nfeatures = 2000, verbose = F)
+trans_hCS_pasca <- ScaleData(trans_hCS_pasca , features = all.genes, verbose = F)
+trans_hCS_pasca <- RunPCA(trans_hCS_pasca, features = VariableFeatures(object = trans_hCS_pasca), verbose = F)
+trans_hCS_pasca <- RunUMAP(trans_hCS_pasca, dims = 1:20, verbose = F)
+DimPlot(trans_hCS_pasca, reduction = 'umap', group.by = 'orig.ident')
+DimPlot(trans_hCS_pasca, reduction = 'umap', group.by = 'subclass_label')
+
+file_name = '../data/seurat_objs/individual/trans_pasca_org_full_seurat_processed.Rdata'
+save(trans_hCS_pasca, file = file_name)
+
+```
+
+```{r}
+pasca_files = c('../data/seurat_objs/individual/non_trans_pasca_org_batch_1_seurat_processed.Rdata',
+               '../data/seurat_objs/individual/non_trans_pasca_org_batch_2_seurat_processed.Rdata',
+               '../data/seurat_objs/individual/non_trans_pasca_org_batch_3_seurat_processed.Rdata',
+                '../data/seurat_objs/individual/trans_pasca_org_batch_1_seurat_processed.Rdata',
+                '../data/seurat_objs/individual/trans_pasca_org_batch_2_seurat_processed.Rdata',
+                '../data/seurat_objs/individual/trans_pasca_org_batch_3_seurat_processed.Rdata')
+num_cells = vector(mode = 'numeric', length = 6)
+for(i in 1:length(pasca_files)){
+  
+  x = load(pasca_files[i])
+  dataset = get(x)
+  rm(x,pasca_org_batch1, pasca_org_batch2, pasca_org_batch3,trans_pasca_org_batch1, trans_pasca_org_batch2, trans_pasca_org_batch3  )
+  num_cells[i] = ncol(dataset)
+}
+
+num_cells
+sum(num_cells)
+```
+
+
+######################################################
+Human fetal dataset processing
+
+
+######################################################
+
+
+Using broad filtering QC metrics
+
+excluding cells with mito >= 50%, nFeatures < 200 or > 6000
+
+
+
+dataset filepaths and whether it's normalized or not
+
+Still need to process the cao_shendure dataset
+```{r}
+
+fan_fu_expression_file_path = '/home/werner/projects/meta_qc_organoid/datasets/fan_fu_human_fetal/GSE120046_brain_all_UMIcounts.txt'
+fan_fu_metadata_file_path = '/home/werner/projects/meta_qc_organoid/datasets/fan_fu_human_fetal/GSE120046_metadata.txt'
+
+#Available as an rdata object
+poliodakis_geschwind_expression_file_path = '/home/werner/projects/meta_qc_organoid/datasets/polioudakis_geschwind_human_fetal/raw_counts_mat.rdata'
+poliodakis_geschwind_metadata_file_path = '/home/werner/projects/meta_qc_organoid/datasets/polioudakis_geschwind_human_fetal/cell_metadata.csv'
+
+shi_wang_expression_file_path = '/home/werner/projects/meta_qc_organoid/datasets/shi_wang_human_fetal/GSE135827_GE_mat_raw_count_with_week_info.txt'
+
+#10X output
+#massive dataset with no metadata woooooo yay awesome
+zhou_lu_expression_file_path = '/home/werner/projects/meta_qc_organoid/datasets/zhou_lu_human_fetal_hypothalamus'
+
+#10X output
+yu_sun_expression_file_path_1 = '/home/werner/projects/meta_qc_organoid/datasets/yu_sun_human_fetal_interneuron/GSM5032680'
+yu_sun_expression_file_path_2 = '/home/werner/projects/meta_qc_organoid/datasets/yu_sun_human_fetal_interneuron/GSM5032681'
+yu_sun_expression_file_path_3 = '/home/werner/projects/meta_qc_organoid/datasets/yu_sun_human_fetal_interneuron/GSM5032682'
+yu_sun_expression_file_path_4 = '/home/werner/projects/meta_qc_organoid/datasets/yu_sun_human_fetal_interneuron/GSM5032683'
+
+
+trevino_greenleaf_expression_file_path = '/home/werner/projects/meta_qc_organoid/datasets/trevino_greenleaf/GSE162170_rna_counts.tsv'
+trevino_greenleaf_metadata_file_path = '/home/werner/projects/meta_qc_organoid/datasets/trevino_greenleaf/GSE162170_rna_cell_metadata.txt'
+
+```
+
+
+
+Large Kriegstein human fetal single cell dataset
+
+```{r}
+#Function to load up the datasets with matrix expected output
+load_matrix_output_dataset = function(file_path, sample_name){
+  
+  data = fread(file_path)
+  feature_names = data[[1]]
+  data = data[ ,2:dim(data)[2]]
+  data = as.sparse(data)
+  rownames(data) = feature_names
+  seurat_object = CreateSeuratObject(counts = data, project = sample_name)
+
+  return(seurat_object)
+}
+
+```
+
+Already Seurat normalized
+```{r}
+fetal_raw_data_path = '/home/werner/projects/meta_qc_organoid/datasets/kriegstein_human_fetal/counts_exprMatrix.tsv'
+data = fread(fetal_raw_data_path)
+feature_names = data[[1]]
+data = data[ ,2:dim(data)[2]]
+data = as.sparse(data)
+rownames(data) = feature_names
+
+
+seurat_object = CreateSeuratObject(counts = data, project = 'kriegstein_human_fetal')
+ncol(seurat_object)
+```
+
+
+```{r}
+seurat_object@assays$RNA@var.features
+
+```
+
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+ncol(seurat_object)
+seurat_object= FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+DimPlot(seurat_object, reduction = 'umap')
+
+
+```
+
+```{r}
+dataset = seurat_object
+save(dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/kriegstein_fetal_seurat_processed.Rdata')
+
+```
+
+```{r}
+rm(seurat_object, dataset)
+
+```
+
+
+
+
+fan_fu dataset, use the raw data and normalize
+
+
+```{r}
+data = fread(fan_fu_expression_file_path )
+feature_names = data[[1]]
+data = data[ ,2:dim(data)[2]]
+data = as.sparse(data)
+rownames(data) = feature_names
+
+seurat_object = CreateSeuratObject(counts = data, project = 'fan_fu_human_fetal')
+seurat_object
+```
+
+```{r}
+hist(seurat_object$nCount_RNA, breaks = 64)
+hist(seurat_object$nFeature_RNA, breaks = 64)
+abline(v = 200, col = 'red')
+```
+
+
+Load and add metadata
+Not all cells are present in the metadata
+```{r}
+
+cell_metadata = fread(fan_fu_metadata_file_path )
+meta_index = match(colnames(seurat_object), cell_metadata$V1)
+cell_metadata = cell_metadata[meta_index, ]
+dim(cell_metadata)
+
+#Add metadataa
+seurat_object$Week = cell_metadata$Week
+seurat_object$Pos = cell_metadata$Pos
+seurat_object$type = cell_metadata$type
+seurat_object$subtype = cell_metadata$subtype
+seurat_object[[]]
+```
+
+
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+ncol(seurat_object)
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+```
+```{r}
+DimPlot(seurat_object, reduction = 'umap')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Pos')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'type')
+```
+
+```{r}
+fan_fu_dataset = seurat_object
+save(fan_fu_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/fan_fu_seurat_processed.Rdata')
+
+```
+
+```{r}
+rm(seurat_object, dataset, fan_fu_dataset)
+
+```
+
+
+
+shi_wang dataset
+using the raw data
+
+```{r}
+
+data = fread(shi_wang_expression_file_path )
+feature_names = data[[1]]
+data = data[ ,2:dim(data)[2]]
+data = as.sparse(data)
+rownames(data) = feature_names
+
+seurat_object = CreateSeuratObject(counts = data, project = 'shi_wang_human_fetal')
+seurat_object
+
+```
+
+gestational week is inn the column names
+
+```{r}
+cell_names = colnames(seurat_object)
+age_meta = sapply(strsplit(cell_names, '-', fixed = T), '[[', 2)
+table(age_meta)
+
+seurat_object$gest_week = age_meta
+```
+```{r}
+hist(seurat_object$nCount_RNA, breaks = 64)
+hist(seurat_object$nFeature_RNA, breaks = 64)
+abline(v = 200, col = 'red')
+```
+
+
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+ncol(seurat_object)
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+```
+
+```{r}
+DimPlot(seurat_object, reduction = 'umap')
+DimPlot(seurat_object, reduction = 'umap', group.by = 'gest_week')
+```
+```{r}
+shi_wang_dataset = seurat_object
+save(shi_wang_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/shi_wang_seurat_processed.Rdata')
+
+```
+
+```{r}
+rm(seurat_object, dataset, shi_wang_dataset)
+
+```
+
+
+
+
+trevino_greenleaf dataset
+will need to convert ensembe IDS
+
+```{r}
+library(biomaRt)
+
+```
+
+```{r}
+
+data = fread(trevino_greenleaf_expression_file_path)
+feature_names = data[[1]]
+
+#Convert to ensemble
+mart = useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+temp_gene_symbol = getBM(filters= "ensembl_gene_id", attributes= c("ensembl_gene_id","hgnc_symbol"), values=feature_names, mart= mart)
+
+#Any ensembl Ids without gene names, just keep the ensembl_id
+empty_index = temp_gene_symbol$hgnc_symbol == ''
+temp_gene_symbol$hgnc_symbol[empty_index] = temp_gene_symbol$ensembl_gene_id[empty_index]
+
+#Reorder to match features
+index = match(feature_names, temp_gene_symbol$ensembl_gene_id)
+temp_gene_symbol = temp_gene_symbol[index, ]
+
+#The ensembl Ids that couldn't be converted
+missing_index = which(!feature_names %in% temp_gene_symbol$ensembl_gene_id)
+
+temp_gene_symbol[missing_index, 'ensembl_gene_id' ] = feature_names[missing_index]
+temp_gene_symbol[missing_index, 'hgnc_symbol' ] = feature_names[missing_index]
+
+table(feature_names == temp_gene_symbol$ensembl_gene_id)
+table(is.na(temp_gene_symbol$ensembl_gene_id))
+table(is.na(temp_gene_symbol$hgnc_symbol))
+
+#Switch over to the hgnc_gene symbols
+feature_names = temp_gene_symbol$hgnc_symbol
+data = data[ ,2:dim(data)[2]]
+data = as.sparse(data)
+rownames(data) = feature_names
+
+data[1:10, 1:10]
+
+seurat_object = CreateSeuratObject(counts = data, project = 'trevino_greenleaf_human_fetal')
+seurat_object
+
+```
+
+load up the metadata and check I have the right nFeature counts and such
+```{r}
+#Looks good
+cell_metadata = fread(trevino_greenleaf_metadata_file_path)
+table(cell_metadata$Cell.ID == colnames(seurat_object))
+table(cell_metadata$RNA.Counts == seurat_object$nCount_RNA)
+table(cell_metadata$RNA.Features == seurat_object$nFeature_RNA)
+
+#Transfer over the metadata
+seurat_object$Sample.ID = cell_metadata$Sample.ID
+seurat_object$Age = cell_metadata$Age
+seurat_object$Tissue.ID = cell_metadata$Tissue.ID
+seurat_object$Sample.Type = cell_metadata$Sample.Type
+seurat_object$Assay = cell_metadata$Assay
+seurat_object$Batch = cell_metadata$Batch
+seurat_object$DF_classification = cell_metadata$DF_classification
+seurat_object$Spliced.Counts = cell_metadata$Spliced.Counts
+seurat_object$Spliced.Features = cell_metadata$Spliced.Features
+seurat_object$Unspliced.Counts = cell_metadata$Unspliced.Counts
+seurat_object$Unspliced.Features = cell_metadata$Unspliced.Features
+seurat_object$Ambiguous.Counts = cell_metadata$Ambiguous.Counts
+seurat_object$Ambiguous.Features = cell_metadata$Ambiguous.Features
+
+
+table(seurat_object$Age)
+table(seurat_object$Tissue.ID)
+table(seurat_object$Sample.Type)
+table(seurat_object$Assay )
+table(seurat_object$Batch )
+table(seurat_object$DF_classification )
+```
+Has doublet metadata, filter the doubets out
+```{r}
+
+hist(seurat_object$nCount_RNA)
+hist(seurat_object$nFeature_RNA, breaks = 64)
+
+ggplot(seurat_object[[]], aes(x = DF_classification, y = nFeature_RNA)) + geom_violin()
+
+dim(seurat_object)
+seurat_object = seurat_object[ , seurat_object$DF_classification == 'Singlet']
+dim(seurat_object)
+```
+
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+ncol(seurat_object)
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+```
+Check for batch effects
+
+```{r}
+
+DimPlot(seurat_object, group.by = 'Age')
+DimPlot(seurat_object, group.by = 'Assay')
+DimPlot(seurat_object, group.by = 'Batch')
+DimPlot(seurat_object, group.by = 'Tissue.ID')
+```
+
+Save each batch separately, using age as the batch for this dataset
+
+```{r}
+
+seurat_object$Age = factor(seurat_object$Age)
+# split the dataset into a list of seurat oobbjects by batch
+greenleaf.list <- SplitObject(seurat_object, split.by = "Age")
+# normalize and process each dataset independently
+greenleaf.list <- lapply(X = greenleaf.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+    x <- ScaleData(x , features = all.genes, verbose = F)
+    x <- RunPCA(x, features = VariableFeatures(object = x), verbose = F)
+    x <- RunUMAP(x, dims = 1:20, verbose = F)
+})
+
+
+lapply(X = greenleaf.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'Age')
+})
+lapply(X = greenleaf.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'Assay')
+})
+lapply(X = greenleaf.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'Batch')
+})
+
+
+trevino_dataset_batch1 = greenleaf.list[[1]]
+file_name = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata'
+save(trevino_dataset_batch1, file = file_name)
+
+trevino_dataset_batch2 = greenleaf.list[[2]]
+file_name = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata'
+save(trevino_dataset_batch2, file = file_name)
+
+trevino_dataset_batch3 = greenleaf.list[[3]]
+file_name = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata'
+save(trevino_dataset_batch3, file = file_name)
+
+trevino_dataset_batch4 = greenleaf.list[[4]]
+file_name = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata'
+save(trevino_dataset_batch4, file = file_name)
+
+```
+
+
+Integrate the batches
+
+```{r}
+#Trying batch correction on the library
+seurat_object$Batch = factor(seurat_object$Batch)
+# split the dataset into a list of seurat oobbjects by batch
+greenleaf.list <- SplitObject(seurat_object, split.by = "Batch")
+
+# normalize and identify variable features for each dataset independently
+greenleaf.list <- lapply(X = greenleaf.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = greenleaf.list)
+greenleaf.anchors <- FindIntegrationAnchors(object.list = greenleaf.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+seurat_object <- IntegrateData(anchorset = greenleaf.anchors)
+DefaultAssay(seurat_object) <- "integrated"
+
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+
+```
+
+```{r}
+
+DimPlot(seurat_object, group.by = 'Age')
+DimPlot(seurat_object, group.by = 'Assay')
+DimPlot(seurat_object, group.by = 'Batch')
+DimPlot(seurat_object, group.by = 'Tissue.ID')
+```
+```{r}
+trevino_dataset = seurat_object
+save(trevino_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_seurat_processed.Rdata')
+
+```
+
+```{r}
+rm(seurat_object, dataset, trevino_dataset, greenleaf.anchors, greenleaf.list, data)
+gc()
+```
+
+
+
+
+poliodakis_geschwind, available as an rdata object
+save an integrated object and save each dataset separately
+
+```{r}
+load(poliodakis_geschwind_expression_file_path)
+data <- as.matrix(raw_counts_mat)
+
+feature_names = rownames(data)
+data = as.sparse(data)
+rownames(data) = feature_names
+
+seurat_object = CreateSeuratObject(counts = data, project = 'poliodakis_geschwind_human_fetal')
+seurat_object
+
+```
+
+Load in metadata
+
+
+```{r}
+cell_metadata = fread(poliodakis_geschwind_metadata_file_path)
+meta_index = match(colnames(seurat_object), cell_metadata$Cell)
+cell_metadata = cell_metadata[meta_index, ]
+
+seurat_object$Cluster = cell_metadata$Cluster
+seurat_object$Subcluster = cell_metadata$Subcluster
+seurat_object$Donor = cell_metadata$Donor
+seurat_object$Layer = cell_metadata$Layer
+seurat_object$Gestation_week = cell_metadata$Gestation_week
+seurat_object$Index = cell_metadata$Index
+seurat_object$Library = cell_metadata$Library
+seurat_object$S_phase_score = cell_metadata$S_phase_score
+seurat_object$G2M_phase_score = cell_metadata$G2M_phase_score
+seurat_object$Phase = cell_metadata$Phase
+```
+
+```{r}
+seurat_object[[]]
+table(seurat_object$Donor)
+table(seurat_object$Library)
+
+#Getting rid of cells without annotations
+bad_cells = rownames(seurat_object[[]][which(is.na(seurat_object$Library)), ])
+seurat_object = seurat_object[ ,!rownames(seurat_object[[]]) %in% bad_cells]
+table(is.na(seurat_object$Library))
+```
+
+
+```{r}
+hist(seurat_object$nCount_RNA, breaks = 64)
+hist(seurat_object$nFeature_RNA, breaks = 64)
+abline(v = 200, col = 'red')
+
+
+
+seurat_object = NormalizeData(seurat_object, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+
+DimPlot(seurat_object, group.by = 'Library')
+DimPlot(seurat_object, group.by = 'Donor')
+DimPlot(seurat_object, group.by = 'Layer')
+DimPlot(seurat_object, group.by = 'Gestation_week')
+```
+Saving each batch separately
+
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+#Filter cells
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+all.genes <- rownames(seurat_object)
+
+#Trying batch correction on the library
+seurat_object$Library = factor(seurat_object$Library)
+# split the dataset into a list of two seurat objects
+polio.list <- SplitObject(seurat_object, split.by = "Library")
+# normalize and process each dataset independently
+polio.list <- lapply(X = polio.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+    x <- ScaleData(x , features = all.genes, verbose = F)
+    x <- RunPCA(x, features = VariableFeatures(object = x), verbose = F)
+    x <- RunUMAP(x, dims = 1:20, verbose = F)
+})
+
+
+lapply(X = polio.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'Library')
+})
+lapply(X = polio.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'Donor')
+})
+lapply(X = polio.list, FUN = function(x) {
+  DimPlot(x, reduction = 'umap', group.by = 'Cluster')
+})
+
+
+poliodakis_dataset_batch1 = polio.list[[1]]
+file_name = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata'
+save(poliodakis_dataset_batch1, file = file_name)
+
+poliodakis_dataset_batch2 = polio.list[[2]]
+file_name = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata'
+save(poliodakis_dataset_batch2, file = file_name)
+
+
+```
+
+
+Integrating the batches
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+
+#Trying batch correction on the library
+seurat_object$Library = factor(seurat_object$Library)
+# split the dataset into a list of two seurat objects (stim and CTRL)
+polio.list <- SplitObject(seurat_object, split.by = "Library")
+
+# normalize and identify variable features for each dataset independently
+polio.list <- lapply(X = polio.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = polio.list)
+polio.anchors <- FindIntegrationAnchors(object.list = polio.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+seurat_object <- IntegrateData(anchorset = polio.anchors)
+DefaultAssay(seurat_object) <- "integrated"
+
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+```
+
+```{r}
+DimPlot(seurat_object, reduction = 'umap')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Cluster')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Subcluster')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Donor')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Layer')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Library', shuffle = T, pt.size = .05)
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Gestation_week')
+```
+
+```{r}
+poliodakis_dataset = seurat_object
+save(poliodakis_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/poliodakis_geschwind_seurat_processed.Rdata')
+
+```
+
+```{r}
+rm(seurat_object, dataset, poliodakis_dataset)
+
+```
+
+
+
+10x data output
+zhou_lu_expression_file_path
+normalized and log transformed
+massive dataset with no metadata woooooo yay awesome
+
+```{r}
+seurat_object = load_10X_output_dataset(zhou_lu_expression_file_path, 'zhou_lu_human_fetal')
+seurat_object
+
+```
+
+```{r}
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+hist(seurat_object$nFeature_RNA,breaks = 64)
+hist(seurat_object$percent.mt,breaks = 64)
+hist(seurat_object$nCount_RNA,breaks = 64)
+plot(seurat_object$nCount_RNA,seurat_object$nFeature_RNA, cex = .25)
+
+```
+
+```{r}
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+ncol(seurat_object)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+```
+
+```{r}
+DimPlot(seurat_object, reduction = 'umap')
+
+```
+
+```{r}
+zhou_lu_dataset = seurat_object
+save(zhou_lu_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata')
+
+```
+
+```{r}
+rm(seurat_object, dataset, zhou_lu_dataset)
+
+```
+
+
+yu_sun datasets
+not normalized, based on looking at the counts, authors do not provide info
+
+```{r}
+seurat_object_1 = load_10X_output_dataset(yu_sun_expression_file_path_1, 'yu_sun_GSM5032680')
+seurat_object_2 = load_10X_output_dataset(yu_sun_expression_file_path_2, 'yu_sun_GSM5032681')
+seurat_object_3 = load_10X_output_dataset(yu_sun_expression_file_path_3, 'yu_sun_GSM5032682')
+seurat_object_4 = load_10X_output_dataset(yu_sun_expression_file_path_4, 'yu_sun_GSM5032683')
+
+seurat_object_1
+seurat_object_2
+seurat_object_3
+seurat_object_4
+```
+
+
+```{r}
+
+seurat_object_1$dataset = rep('yu_sun_batch_1', ncol(seurat_object_1))
+seurat_object_2$dataset = rep('yu_sun_batch_2', ncol(seurat_object_2))
+seurat_object_3$dataset = rep('yu_sun_batch_3', ncol(seurat_object_3))
+seurat_object_4$dataset = rep('yu_sun_batch_4', ncol(seurat_object_4))
+```
+
+```{r}
+temp_seurat_list = c(seurat_object_1, seurat_object_2, seurat_object_3, seurat_object_4)
+
+```
+
+
+```{r}
+yu_sun_dataset =  merge(seurat_object_1, y = c(seurat_object_2, seurat_object_3, seurat_object_4), add.cell.ids = c('b1', "b2", "b3", 'b4'), project = "yu_sun_dataset")
+yu_sun_dataset
+yu_sun_dataset[[]]
+
+```
+
+```{r}
+hist(seurat_object$percent.mt, breaks = 64)
+hist(yu_sun_dataset$nCount_RNA, breaks = 64)
+hist(yu_sun_dataset$nFeature_RNA, breaks = 64)
+abline(v = 200, col = 'red')
+```
+
+Correcting the batches
+
+```{r}
+seurat_object = yu_sun_dataset
+seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+ncol(seurat_object)
+
+```
+
+
+
+```{r}
+# split the dataset into a list of two seurat objects (stim and CTRL)
+yuSun.list <- SplitObject(seurat_object, split.by = "dataset")
+
+# normalize and identify variable features for each dataset independently
+yuSun.list <- lapply(X = yuSun.list, FUN = function(x) {
+    x <- NormalizeData(x, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = yuSun.list)
+yuSun.anchors <- FindIntegrationAnchors(object.list = yuSun.list, anchor.features = features)
+# this command creates an 'integrated' data assay
+seurat_object <- IntegrateData(anchorset = yuSun.anchors)
+DefaultAssay(seurat_object) <- "integrated"
+
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+```
+
+```{r}
+
+DimPlot(seurat_object, reduction = 'umap', group.by = 'dataset', shuffle = T)
+
+```
+```{r}
+yu_sun_dataset = seurat_object
+save(yu_sun_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/yu_sun_integrated_seurat_processed.Rdata')
+
+```
+
+
+
+Processing each dataset individually
+
+
+```{r}
+
+for(i in 1:length(temp_seurat_list)){
+
+  seurat_object = temp_seurat_list[[i]]
+
+  seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+  seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+  seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+  seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+  all.genes <- rownames(seurat_object)
+  seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+  seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+  seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+  print(DimPlot(seurat_object, reduction = 'umap'))
+
+  dataset = seurat_object
+  file_name = sprintf('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/yu_sun_GSM503268%i_seurat_processed.Rdata', i-1)
+  save(dataset, file = file_name)
+
+}
+
+```
+
+
+
+
+```{r}
+
+num_cells_filt = vector(mode = 'numeric', length = num_datasets)
+
+for(i in 1:num_datasets){
+  
+  #Load in the dataset
+  print(i)
+  load(all_sample_meta$unprocessed_seurat_path[i])
+  #Get mitochondrial genes percentage
+  dataset[["percent.mt"]] <- PercentageFeatureSet(dataset, pattern = "^MT-")
+  
+  #Remove counts from CATG annotations from the first 7 datasets
+  if(i %in% c(1,2,3,4,5,6,7)){
+    dataset = dataset[!grepl('CATG', rownames(dataset)), ]
+  }
+  
+  #Filter out cells
+  dataset = subset(dataset,subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+  num_cells_filt[i] = ncol(dataset)
+  #All standard Seurat processing
+  #First normalize if needed
+  if(i %in% need_norm_index){
+    dataset = NormalizeData(dataset, normalization.method = 'RC', scale.factor = 1e6, verbose = F)
+  }
+  dataset = FindVariableFeatures(dataset, selection.method = "vst", nfeatures = 2000, verbose = F)
+  all.genes <- rownames(dataset)
+  dataset = ScaleData(dataset , features = all.genes, verbose = F)
+  dataset = RunPCA(dataset, features = VariableFeatures(object = dataset), verbose = F)
+  dataset = RunUMAP(dataset, dims = 1:20, verbose = F)
+  #save the dataset
+  save(dataset, file = all_sample_meta$processed_seurat_path[i])
+  rm(dataset)
+}
+
+```
+
+Add the filtered number of cells to the metadata and save it
+
+
+
+```{r}
+all_sample_meta$num_cells_filt = num_cells_filt
+save(all_sample_meta, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/all_data_just_meta_seurat.Rdata')
+
+```
+
+
+
