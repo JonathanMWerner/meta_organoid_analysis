@@ -26,6 +26,7 @@ library(MetBrewer)
 library(circlize)
 library(ComplexHeatmap)
 library(rrvgo)
+library(MetaMarkers)
 
 ```
 
@@ -42,7 +43,29 @@ fetal_class_palette
 
 
 ```
+## Figure 1B
 
+```{r}
+
+all_sample_meta = read.csv('data_for_plots/all_data_just_meta_seurat_with_addl_features_v2.csv')
+
+
+#Get palette for the grouped described protocols
+table(all_sample_meta$Protocol.classification.region)
+
+sample_region_grouped_palette = met.brewer('Renoir', n = 14)
+names(sample_region_grouped_palette) = names(table(all_sample_meta$Protocol.classification.region))
+
+
+org_samp_df = all_sample_meta %>% count(Protocol.classification.region) %>% arrange(desc(n))
+org_samp_df$Protocol.classification= factor(org_samp_df$Protocol.classification, levels = c(org_samp_df$Protocol.classification) )
+ggplot(org_samp_df, aes(x = Protocol.classification, y = n, fill = Protocol.classification)) + geom_bar( stat = 'identity') +
+  scale_fill_manual(values =sample_region_grouped_palette, name = 'Organoid type') +
+  ylab('# of datasets') + xlab('Organoid type') + ggtitle('Human neural organoid scRNA-seq datasets') +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+        legend.key.size = unit(.25, 'cm'))
+
+```
 
 
 ## Figure 2C
@@ -878,6 +901,349 @@ ggplot(time_mat_genes_df, aes(x = num_genes, y = mean_time_mins, group = label, 
 
 
 ```
+
+
+## Supp. Figure 2 A
+
+```{r regional_exp_first_tri}
+
+#Contain matrix_list
+load('data_for_plots/linnarsson_dataset_regional_marker_exp_matrices.Rdata')
+
+firstTri_human_fetal_dataset_names = c( 
+                               'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
+                               'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
+                               'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
+                               'linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2',
+                               'linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13', 'linnarsson_GW14')
+
+class_palette = met.brewer("Archambault", 20)
+
+structure_palette = met.brewer("Demuth", 10)
+
+celltype_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 'Glutamatergic' = class_palette[14], 'Neural_Progenitor' = class_palette[4], 
+                  'Dividing_Progenitor' = class_palette[10], 'Intermediate_Progenitor' = class_palette[16], 
+                  'other' = 'grey')
+
+structure_palette = c('Brain' = structure_palette[1], 'Cerebellum' = structure_palette[2], 'Diencephalon' = structure_palette[3], 'Forebrain' = structure_palette[4], 
+                      'Head' = structure_palette[5],
+                      'Hindbrain' = structure_palette[6], 'Medulla' = structure_palette[7], 'Midbrain' = structure_palette[8], 'Pons' = structure_palette[9], 
+                      'Telencephalon' = structure_palette[10])
+
+
+
+
+for(i in 1:length(firstTri_human_fetal_dataset_names )){
+
+  current_dataset = firstTri_human_fetal_dataset_names[i]
+  test_single = matrix_list[[i]]
+  #Drop the NA celltypes and sturctures
+  keep_rows = which(rowSums(!is.na(test_single)) != 0)
+  keep_columns = which(colSums(!is.na(test_single)) != 0)
+  test_single = test_single[keep_rows, keep_columns]
+  
+  
+  col_index = c(which(grepl('Glutamatergic', colnames(test_single))), which(grepl('GABAergic', colnames(test_single))), 
+    which(grepl('Non-neuronal', colnames(test_single))), which(grepl('Neural_Progenitor', colnames(test_single))),
+    which(grepl('Dividing_Progenitor', colnames(test_single))), which(grepl('Intermediate_Progenitor', colnames(test_single))))
+  
+  test_single = test_single[ ,col_index]
+  
+  #Celltype and structure annotations
+  class_row_vec = vector(mode = 'character', length = nrow(test_single))
+  class_row_vec[grepl('Non-neuronal',rownames(test_single))] = 'Non-neuronal'
+  class_row_vec[grepl('GABAergic',rownames(test_single))] = 'GABAergic'
+  class_row_vec[grepl('Glutamatergic',rownames(test_single))] = 'Glutamatergic'
+  class_row_vec[grepl('Neural_Progenitor',rownames(test_single))] = 'Neural_Progenitor'
+  class_row_vec[grepl('Dividing_Progenitor',rownames(test_single))] = 'Dividing_Progenitor'
+  class_row_vec[grepl('Intermediate_Progenitor',rownames(test_single))] = 'Intermediate_Progenitor'
+  
+  class_col_vec = vector(mode = 'character', length = ncol(test_single))
+  class_col_vec[grepl('Non-neuronal',colnames(test_single))] = 'Non-neuronal'
+  class_col_vec[grepl('GABAergic',colnames(test_single))] = 'GABAergic'
+  class_col_vec[grepl('Glutamatergic',colnames(test_single))] = 'Glutamatergic'
+  class_col_vec[grepl('Neural_Progenitor',colnames(test_single))] = 'Neural_Progenitor'
+  class_col_vec[grepl('Dividing_Progenitor',colnames(test_single))] = 'Dividing_Progenitor'
+  class_col_vec[grepl('Intermediate_Progenitor',colnames(test_single))] = 'Intermediate_Progenitor'
+  
+  structure_col_vec = vector(mode = 'character', length = ncol(test_single))
+  structure_col_vec[grepl('Brain',colnames(test_single))] = 'Brain'
+  structure_col_vec[grepl('Cerebellum',colnames(test_single))] = 'Cerebellum'
+  structure_col_vec[grepl('Diencephalon',colnames(test_single))] = 'Diencephalon'
+  structure_col_vec[grepl('Forebrain',colnames(test_single))] = 'Forebrain'
+  structure_col_vec[grepl('Head',colnames(test_single))] = 'Head'
+  structure_col_vec[grepl('Hindbrain',colnames(test_single))] = 'Hindbrain'
+  structure_col_vec[grepl('Medulla',colnames(test_single))] = 'Medulla'
+  structure_col_vec[grepl('Midbrain',colnames(test_single))] = 'Midbrain'
+  structure_col_vec[grepl('Pons',colnames(test_single))] = 'Pons'
+  structure_col_vec[grepl('Telencephalon',colnames(test_single))] = 'Telencephalon'
+  
+  top_ha = HeatmapAnnotation(celltype_markers = class_col_vec, structure = structure_col_vec, 
+                         col = list(celltype_markers = celltype_palette, structure = structure_palette))
+  row_ha = rowAnnotation(celltypes = class_row_vec, 
+                         col = list(celltypes = celltype_palette))
+  h = Heatmap(test_single, name = 'max avg. expression',
+          top_annotation = top_ha, left_annotation = row_ha, show_column_names = F, cluster_rows = F, cluster_columns = F)
+  draw(h)
+}
+
+
+```
+
+
+## Supp. Figure 2B
+
+```{r regional_exp_second_tri}
+#Contain matrix_list
+load('data_for_plots/areal_dataset_regional_marker_exp_matrices.Rdata')
+
+secondTri_human_fetal_dataset_names = c( 'areal_GW14','areal_GW18_2','areal_GW19','areal_GW19_2',
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25')
+
+class_palette = met.brewer("Archambault", 20)
+
+structure_palette = met.brewer("Demuth", 10)
+
+celltype_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 'Glutamatergic' = class_palette[14], 'Neural_Progenitor' = class_palette[4], 
+                  'Dividing_Progenitor' = class_palette[10], 'Intermediate_Progenitor' = class_palette[16], 
+                  'other' = 'grey')
+
+structure_palette = c('GE' = structure_palette[1], 'hypothalamus' = structure_palette[2], 'neocortex' = structure_palette[3], 'striatum' = structure_palette[4], 
+                      'thalamus' = structure_palette[5],
+                      'allocortex' = structure_palette[6], 'claustrum' = structure_palette[7], 'cerebellum' = structure_palette[8], 'midbrain' = structure_palette[9], 
+                      'proneocortex' = structure_palette[10])
+
+
+for(i in 1:length(secondTri_human_fetal_dataset_names )){
+  
+  current_dataset = secondTri_human_fetal_dataset_names[i]
+  test_single = matrix_list[[i]]
+  #Drop the NA celltypes and sturctures
+  keep_rows = which(rowSums(!is.na(test_single)) != 0)
+  keep_columns = which(colSums(!is.na(test_single)) != 0)
+  test_single = test_single[keep_rows, keep_columns]
+  
+  
+  col_index = c(which(grepl('Glutamatergic', colnames(test_single))), which(grepl('GABAergic', colnames(test_single))), 
+    which(grepl('Non-neuronal', colnames(test_single))), which(grepl('Neural_Progenitor', colnames(test_single))),
+    which(grepl('Dividing_Progenitor', colnames(test_single))), which(grepl('Intermediate_Progenitor', colnames(test_single))))
+  
+  test_single = test_single[ ,col_index]
+  
+  #Celltype and structure annotations
+  class_row_vec = vector(mode = 'character', length = nrow(test_single))
+  class_row_vec[grepl('Non-neuronal',rownames(test_single))] = 'Non-neuronal'
+  class_row_vec[grepl('GABAergic',rownames(test_single))] = 'GABAergic'
+  class_row_vec[grepl('Glutamatergic',rownames(test_single))] = 'Glutamatergic'
+  class_row_vec[grepl('Neural_Progenitor',rownames(test_single))] = 'Neural_Progenitor'
+  class_row_vec[grepl('Dividing_Progenitor',rownames(test_single))] = 'Dividing_Progenitor'
+  class_row_vec[grepl('Intermediate_Progenitor',rownames(test_single))] = 'Intermediate_Progenitor'
+  
+  class_col_vec = vector(mode = 'character', length = ncol(test_single))
+  class_col_vec[grepl('Non-neuronal',colnames(test_single))] = 'Non-neuronal'
+  class_col_vec[grepl('GABAergic',colnames(test_single))] = 'GABAergic'
+  class_col_vec[grepl('Glutamatergic',colnames(test_single))] = 'Glutamatergic'
+  class_col_vec[grepl('Neural_Progenitor',colnames(test_single))] = 'Neural_Progenitor'
+  class_col_vec[grepl('Dividing_Progenitor',colnames(test_single))] = 'Dividing_Progenitor'
+  class_col_vec[grepl('Intermediate_Progenitor',colnames(test_single))] = 'Intermediate_Progenitor'
+  
+  structure_col_vec = vector(mode = 'character', length = ncol(test_single))
+  structure_col_vec[grepl('GE',colnames(test_single))] = 'GE'
+  structure_col_vec[grepl('hypothalamus',colnames(test_single))] = 'hypothalamus'
+  structure_col_vec[grepl('neocortex',colnames(test_single))] = 'neocortex'
+  structure_col_vec[grepl('striatum',colnames(test_single))] = 'striatum'
+  structure_col_vec[grepl('thalamus',colnames(test_single))] = 'thalamus'
+  structure_col_vec[grepl('allocortex',colnames(test_single))] = 'allocortex'
+  structure_col_vec[grepl('claustrum',colnames(test_single))] = 'claustrum'
+  structure_col_vec[grepl('cerebellum',colnames(test_single))] = 'cerebellum'
+  structure_col_vec[grepl('midbrain',colnames(test_single))] = 'midbrain'
+  structure_col_vec[grepl('proneocortex',colnames(test_single))] = 'proneocortex'
+  
+  
+  top_ha = HeatmapAnnotation(celltype_markers = class_col_vec, structure = structure_col_vec, 
+                         col = list(celltype_markers = celltype_palette, structure = structure_palette))
+  row_ha = rowAnnotation(celltypes = class_row_vec, 
+                         col = list(celltypes = celltype_palette))
+  h = Heatmap(test_single, name = 'max avg. expression',
+          top_annotation = top_ha, left_annotation = row_ha, show_column_names = F, cluster_rows = F, cluster_columns = F)
+  draw(h)
+
+}
+
+```
+
+
+## Supp. Figure 3B
+
+```{r org_timeseries_celltype_auroc}
+
+#Contains the divProg_time_df, nProg_time_df, intProg_time_df, gaba_time_df, glut_time_df, nonN_time_df
+load('data_for_plots/org_timeseries_celltypeAUROC_dataframes_v2.Rdata')
+
+time_palette = met.brewer("Tam", 8)
+organoid_time_palette = c('day_23' = time_palette[1],'month_1' = time_palette[2],'month_1_5' = time_palette[3],'month_2' = time_palette[4],'month_3' = time_palette[5],
+                          'month_4' = time_palette[6],'month_5' = time_palette[7],'month_6' = time_palette[8])
+
+
+ggplot(nProg_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ylab('Predicting Organoid celltypes (AUC)') + xlab('Fetal markers') + ylim(.25, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Neural Progenitors') + theme(axis.text.x = element_text(size = 7))
+
+ggplot(divProg_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ylab('Predicting Organoid celltypes (AUC)') + xlab('Fetal markers') + ylim(.25, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Dividing Progenitors') + theme(axis.text.x = element_text(size = 7))
+
+ggplot(glut_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ylab('Predicting Organoid celltypes (AUC)') + xlab('Fetal markers') + ylim(.25, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Glutamatergic Neurons') + theme(axis.text.x = element_text(size = 7))
+
+
+ggplot(gaba_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ylab('Predicting Organoid celltypes (AUC)') + xlab('Fetal markers') + ylim(.25, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('GABAergic Neurons') + theme(axis.text.x = element_text(size = 7))
+
+ggplot(nonN_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ylab('Predicting Organoid celltypes (AUC)') + xlab('Fetal markers') + ylim(.25, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Non-neuronal') + theme(axis.text.x = element_text(size = 7))
+
+ggplot(intProg_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ylab('Predicting Organoid celltypes (AUC)') + xlab('Fetal markers') + ylim(.25, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Intermediate Progenitors') + theme(axis.text.x = element_text(size = 7))
+
+```
+
+
+
+## Supp. Figure 3C
+
+```{r organoid_PCA}
+
+#contains the hvg_pc1_eigenvec_matrix
+load('data_for_plots/org_eigenvec_matrices_v3.Rdata')
+
+class_palette = met.brewer("Archambault", 20)
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'Fetal Microglia/Immune marker' = class_palette[18],
+                         'non-marker' = 'white')
+
+#Top primary tissue metaMarkers
+fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_v2.csv.gz")
+
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+
+#color for the weights
+col_fun = colorRamp2(c(0, .5, 1), c(inferno(3)[1], inferno(3)[2], inferno(3)[3]))
+
+#Turn NAs to 0s and filter out genes that are not present in at least ten dataset
+temp_hvg_pc_eigenvec_matrix = hvg_pc1_eigenvec_matrix
+temp_hvg_pc_eigenvec_matrix[is.na(temp_hvg_pc_eigenvec_matrix)] = 0
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[rowSums(temp_hvg_pc_eigenvec_matrix != 0) >= 10 , ]
+
+
+#filter out the non markers, just making the point that fetal markers are consistently weighted in the first PC across organoid datasets
+keep_index = rownames(temp_hvg_pc_eigenvec_matrix) %in% c(gaba_markers$gene, glut_markers$gene, nProg_markers$gene, nonN_markers$gene, intProg_markers$gene, divProg_markers$gene)
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[keep_index, ]
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(temp_hvg_pc_eigenvec_matrix))
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(temp_hvg_pc_eigenvec_matrix) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker' 
+
+ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+dataset_annot = HeatmapAnnotation(organoid = all_sample_meta$Protocol.classification, 
+                                  col = list(organoid = sample_region_grouped_palette))
+
+Heatmap(temp_hvg_pc_eigenvec_matrix, cluster_rows = T, cluster_columns = T, show_row_names = F, col = col_fun, name = 'PC1 weights', 
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', left_annotation = ha, top_annotation = dataset_annot)
+
+```
+
+## Supp. Figure 3D
+
+```{r organoid_PCA_marker_nonMarker_comparisons}
+temp_hvg_pc_eigenvec_matrix = hvg_pc1_eigenvec_matrix
+temp_hvg_pc_eigenvec_matrix[is.na(temp_hvg_pc_eigenvec_matrix)] = 0
+temp_hvg_pc_eigenvec_matrix = temp_hvg_pc_eigenvec_matrix[rowSums(temp_hvg_pc_eigenvec_matrix != 0) >= 10 , ]
+
+test_df = reshape2::melt(temp_hvg_pc_eigenvec_matrix)
+test_df$marker_class = rep('non-marker', nrow(test_df))
+test_df$marker_class[test_df$Var1 %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+test_df$marker_class[test_df$Var1 %in% gaba_markers$gene] = 'Fetal GABAergic marker'
+test_df$marker_class[test_df$Var1 %in% glut_markers$gene] = 'Fetal Glutamatergic marker'
+test_df$marker_class[test_df$Var1 %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker'
+test_df$marker_class[test_df$Var1 %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+test_df$marker_class[test_df$Var1 %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+
+test_df$marker_class = factor(test_df$marker_class, levels = c('Fetal Dividing Progenitor marker', 'Fetal Neural Progenitor marker', 'Fetal Glutamatergic marker',
+                                                              'Fetal Intermediate Progenitor marker','Fetal Non-neuronal marker',
+                                                               'Fetal GABAergic marker','non-marker' ))
+
+ggplot(test_df, aes(x = marker_class, y = value, fill = marker_class)) + geom_violin(scale = 'width', alpha = .5) + geom_boxplot(outlier.shape = NA, width = .2) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) + scale_fill_manual(values = class_marker_palette) +
+  ylab('Organoid PC1 weights') + ggtitle('Top fetal brain markers define PC1 in organoid data')
+
+
+#Contains the all_gene_pc_df_plotting dataframe
+load('data_for_plots/all_gene_pc_df.Rdata')
+
+
+ggplot(all_gene_pc_df_plotting, aes(x = weight_threshold, y = mean_frac, group = marker_label, color = marker_label)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = class_marker_palette) +
+  ylab('Fraction of neural organoid datasets gene is heavily weighted in PC1') + xlab('PC1 weight threshold to determine heavily weighted genes')
+
+```
+
 
 
 
