@@ -3,6 +3,10 @@ figure_plots_with_data_code
 Jonathan Werner
 2024-08-27
 
+``` r
+library(ggplot2)
+```
+
 ## R Markdown
 
 This is an R Markdown document. Markdown is a simple formatting syntax
@@ -41,3 +45,14 @@ plot(a, b, main = 'test_graph')
 ```
 
 ![](figure_plots_with_data_code_files/figure-gfm/unnamed-chunk-1-1.png)<!-- -->
+
+Testing out making a plot with data from the MetaOrganoid project
+
+``` r
+all_sample_meta = read.csv( 'data_for_plots/all_data_just_meta_seurat_with_addl_features_v2.csv')
+
+ggplot(all_sample_meta,aes( x = Protocol.classification.region, y = nProg_cons_coexp_metric)) + geom_boxplot() +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/test_sample_meta_data-1.png)<!-- -->

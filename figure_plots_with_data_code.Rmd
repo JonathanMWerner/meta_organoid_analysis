@@ -10,6 +10,17 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
+```{r packages}
+
+library(ggplot2)
+
+```
+
+
+
+
+
+
 ## R Markdown
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
@@ -37,6 +48,27 @@ b = 1:100
 plot(a, b, main = 'test_graph')
 
 ```
+
+Testing out making a plot with data from the MetaOrganoid project
+
+```{r test_sample_meta_data }
+
+
+
+all_sample_meta = read.csv( 'data_for_plots/all_data_just_meta_seurat_with_addl_features_v2.csv')
+
+ggplot(all_sample_meta,aes( x = Protocol.classification.region, y = nProg_cons_coexp_metric)) + geom_boxplot() +
+  scale_x_discrete(guide = guide_axis(n.dodge=3))
+
+
+```
+
+
+
+
+
+
+
 
 
 
