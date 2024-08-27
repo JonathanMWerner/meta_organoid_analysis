@@ -2,7 +2,7 @@
 title: "figure_plots_with_data_code"
 author: "Jonathan Werner"
 date: "2024-08-27"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
