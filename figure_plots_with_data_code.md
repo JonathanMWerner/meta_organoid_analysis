@@ -34,7 +34,53 @@ library(viridis)
 
 ``` r
 library(MetBrewer)
+library(circlize)
 ```
+
+    ## ========================================
+    ## circlize version 0.4.16
+    ## CRAN page: https://cran.r-project.org/package=circlize
+    ## Github page: https://github.com/jokergoo/circlize
+    ## Documentation: https://jokergoo.github.io/circlize_book/book/
+    ## 
+    ## If you use it in published research, please cite:
+    ## Gu, Z. circlize implements and enhances circular visualization
+    ##   in R. Bioinformatics 2014.
+    ## 
+    ## This message can be suppressed by:
+    ##   suppressPackageStartupMessages(library(circlize))
+    ## ========================================
+
+``` r
+library(ComplexHeatmap)
+```
+
+    ## Loading required package: grid
+
+    ## ========================================
+    ## ComplexHeatmap version 2.20.0
+    ## Bioconductor page: http://bioconductor.org/packages/ComplexHeatmap/
+    ## Github page: https://github.com/jokergoo/ComplexHeatmap
+    ## Documentation: http://jokergoo.github.io/ComplexHeatmap-reference
+    ## 
+    ## If you use it in published research, please cite either one:
+    ## - Gu, Z. Complex Heatmap Visualization. iMeta 2022.
+    ## - Gu, Z. Complex heatmaps reveal patterns and correlations in multidimensional 
+    ##     genomic data. Bioinformatics 2016.
+    ## 
+    ## 
+    ## The new InteractiveComplexHeatmap package can directly export static 
+    ## complex heatmaps into an interactive Shiny app with zero effort. Have a try!
+    ## 
+    ## This message can be suppressed by:
+    ##   suppressPackageStartupMessages(library(ComplexHeatmap))
+    ## ========================================
+
+``` r
+library(rrvgo)
+```
+
+    ## 
 
 ``` r
 class_palette = met.brewer("Archambault", 20)
@@ -249,6 +295,7 @@ ggplot(rank_marker_df, aes(x = Var2, y = rank, color = color_vec)) + geom_boxplo
 
 ``` r
 #contains agg_exp_df
+#File is too large for github
 load(file = 'data_for_plots/cross_dataset_aggregated_exp_metaMarker_all_fetal.Rdata')
 
 
@@ -436,7 +483,9 @@ the full 3.5Gb files for the plots
 
 ``` r
 #EGAD scores for all the individual datasets
+#File is too large for github
 load('data_for_plots/organoid_egad_results_ranked_6_26_24.Rdata')
+#File is too large for github
 load('data_for_plots/fetal_egad_results_ranked_6_26_24.Rdata')
 load('data_for_plots/unannot_fetal_egad_results_ranked_6_26_24.Rdata')
 #EGAD score for the aggregate networks
@@ -580,3 +629,411 @@ ggplot(filter(cross_marker_set_coexp_df, dataset_type != 'Aggregate'), aes(x = c
 ```
 
 ![](figure_plots_with_data_code_files/figure-gfm/cross_marker_set_coexpression-2.png)<!-- -->
+
+## Figure 4B
+
+``` r
+#Organoid metadat data
+all_sample_meta = read.csv('data_for_plots/all_data_just_meta_seurat_with_addl_features_v2.csv')
+
+#Contains cross_valid_fetal_cons_coexp_df, unannot_sum_cons_coexp_df
+load(file = 'data_for_plots/fetal_preserve_fetal_coexp_dfs.Rdata' )
+
+
+#Taking the average score per marker set, can compare across the datasets
+#Annotated Primary tissue data
+sum_cons_coexp_df = cross_valid_fetal_cons_coexp_df %>% group_by(Var1, gene_celltype_label) %>% summarize(sum = sum(value)/num_go_markers[1])
+```
+
+    ## `summarise()` has grouped output by 'Var1'. You can override using the
+    ## `.groups` argument.
+
+``` r
+sum_cons = sum_cons_coexp_df
+sum_cons$dataset_type = rep('annotated fetal', length = nrow(sum_cons_coexp_df))
+
+#Unannotated primary tissue data
+unannot_sum_cons = unannot_sum_cons_coexp_df %>% mutate(dataset_type = rep('unannotated fetal', length = nrow(unannot_sum_cons_coexp_df)))
+
+
+#Organoid data
+sum_vec = c(all_sample_meta$nProg_cons_coexp_metric, all_sample_meta$intProg_cons_coexp_metric, all_sample_meta$dividing_cons_coexp_metric,
+            all_sample_meta$glut_cons_coexp_metric, all_sample_meta$gaba_cons_coexp_metric, all_sample_meta$nonN_cons_coexp_metric,
+            all_sample_meta$micro_cons_coexp_metric)
+
+label_vec = c(rep('fetal Neural progenitor marker', nrow(all_sample_meta)), rep('fetal Intermediate progenitor marker', nrow(all_sample_meta)),
+              rep('fetal Dividing progenitor marker', nrow(all_sample_meta)),
+              rep('fetal glutamatergic marker', nrow(all_sample_meta)), 
+              rep('fetal GABAergic marker', nrow(all_sample_meta)), rep('fetal non-neuronal marker', nrow(all_sample_meta)),
+              rep('fetal Microglia/Immune marker', nrow(all_sample_meta)))
+
+var1_vec = rep(paste('organoid dataset', as.character(1:nrow(all_sample_meta))), 7)
+dataset_label = rep('organoid', length = length(var1_vec))
+
+
+organoid_sum_cons_coexp_df = data.frame(Var1 = var1_vec, sum = sum_vec, gene_celltype_label = label_vec, dataset_type = dataset_label)
+
+
+
+comb_cons_coexp_df = rbind(sum_cons, unannot_sum_cons, organoid_sum_cons_coexp_df)
+comb_cons_coexp_df$dataset_type = factor(comb_cons_coexp_df$dataset_type, levels = c('annotated fetal','unannotated fetal','organoid'))
+comb_cons_coexp_df$gene_celltype_label = factor(comb_cons_coexp_df$gene_celltype_label, levels = c('fetal Dividing progenitor marker', 'fetal Neural progenitor marker',
+                                                                                                   'fetal glutamatergic marker','fetal non-neuronal marker',
+                                                                                                   'fetal Intermediate progenitor marker',
+                                                                                                   'fetal GABAergic marker','fetal Microglia/Immune marker'))
+
+color_vec = c('annotated fetal' = 'darkorange', 'unannotated fetal' = 'firebrick', 'organoid'= 'darkorchid')
+
+ggplot(filter(comb_cons_coexp_df, gene_celltype_label != 'fetal Microglia/Immune marker'), aes(x = gene_celltype_label, y = sum, fill = dataset_type)) + geom_boxplot(alpha = .75) +
+  geom_hline(yintercept = .5, col = 'red', linetype = 'dashed') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + ylab('Strength of conserved coexpression') +
+  scale_fill_manual(values = color_vec) +
+  theme(axis.title.x = element_blank())
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/preserved_coexpress_boxplots-1.png)<!-- -->
+
+## Figure 1F and Figure 6B
+
+``` r
+#compute percentile from ecdf
+ecdf_fun <- function(x,perc) ecdf(x)(perc)
+
+
+example_org_df = filter(comb_cons_coexp_df, Var1 == 'organoid dataset 16' & gene_celltype_label != 'fetal Microglia/Immune marker')
+temp_comb_cons_coexp_df = filter(comb_cons_coexp_df, Var1 != 'organoid dataset 16'& gene_celltype_label != 'fetal Microglia/Immune marker') 
+
+fetal_label = vector(mode = 'character', length = nrow(temp_comb_cons_coexp_df))
+fetal_label[grepl('fetal', temp_comb_cons_coexp_df$dataset_type)] = 'Fetal'
+fetal_label[grepl('organoid', temp_comb_cons_coexp_df$dataset_type)] = 'Organoid'
+temp_comb_cons_coexp_df$fetal_label = fetal_label
+
+#Get percentiles of the example organoid dataset using the empirical CDFs, round to nearest percentile
+org_fetal_percentile_vec = sapply(1:nrow(example_org_df), function(i) paste(as.character(round(ecdf_fun(filter(temp_comb_cons_coexp_df, 
+                                                                              fetal_label == 'Fetal' & gene_celltype_label == example_org_df$gene_celltype_label[i])$sum,
+                                                                       filter(example_org_df, gene_celltype_label == example_org_df$gene_celltype_label[i])$sum)*100)), 'percentile'))
+
+org_org_percentile_vec = sapply(1:nrow(example_org_df), function(i) paste(as.character(round(ecdf_fun(filter(temp_comb_cons_coexp_df, 
+                                                                              fetal_label == 'Organoid' & gene_celltype_label == example_org_df$gene_celltype_label[i])$sum,
+                                                                       filter(example_org_df, gene_celltype_label == example_org_df$gene_celltype_label[i])$sum)*100)), 'percentile'))
+
+example_org_df$org_fetal_percentile = org_fetal_percentile_vec 
+example_org_df$org_org_percentile = org_org_percentile_vec 
+
+ggplot(filter(temp_comb_cons_coexp_df, fetal_label == 'Fetal'), aes(x = gene_celltype_label, y = sum)) + geom_violin(scale = 'width') +
+  ylim(0,1) + ylab('Preserved Co-expression score') + ggtitle('Fetal datasets') +
+  stat_summary(data = example_org_df, aes(x = gene_celltype_label, y = sum), fun = 'sum', color = 'red', geom = 'crossbar', width = .5) +
+  geom_text(data = example_org_df, aes(label = org_fetal_percentile), y = .25) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/presCoexp_reference_distributions-1.png)<!-- -->
+
+``` r
+ggplot(filter(temp_comb_cons_coexp_df, fetal_label == 'Organoid'), aes(x = gene_celltype_label, y = sum)) + geom_violin(scale = 'width') +
+  ylim(0,1) + ylab('Preserved Co-expression score') + ggtitle('Organoid datasets') +
+  stat_summary(data = example_org_df, aes(x = gene_celltype_label, y = sum), fun = 'sum', color = 'red', geom = 'crossbar', width = .5) +
+  geom_text(data = example_org_df, aes(label = org_org_percentile), y = .25) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/presCoexp_reference_distributions-2.png)<!-- -->
+
+## Figure 4C
+
+``` r
+cons_coexp_meta = all_sample_meta[ , c('nProg_cons_coexp_metric','dividing_cons_coexp_metric','intProg_cons_coexp_metric',
+                                       'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric')]
+
+
+cor_cons_coexp_metrix = cor(cons_coexp_meta, method = 'spearman')
+
+col_fun = colorRamp2(c( 0, 1), c("white", "red"))
+
+Heatmap(cor_cons_coexp_metrix, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/presCoexp_correlations-1.png)<!-- -->
+
+## Figure 4D and E
+
+Need to go back and save the data files
+
+## Figure 4F
+
+``` r
+load(file = 'data_for_plots/conserved_coexp_pval_df_v5.Rdata')
+
+
+test_df = go_conserved_coexp_df
+#Replace 0 pvalues with the minimum pvalue
+non_zero_smallest_p <- test_df %>% filter(se_right_pval != 0) %>% pull(se_right_pval) %>% min()
+test_df = test_df %>% mutate(se_right_pval = if_else(se_right_pval == 0, non_zero_smallest_p, se_right_pval))
+#Filter by gene set size and pvalue
+test_df = test_df %>% filter(num_genes >=20 & num_genes <= 250 & se_right_pval <= .0001)
+#rrvgo functions, gets similarity between terms, then reduces into broader groups
+#ontology is BP CC or MF
+simMatrix <- calculateSimMatrix(test_df$go_term,
+                                orgdb="org.Hs.eg.db",
+                                ont="BP",
+                                method="Rel")
+```
+
+    ## 
+
+    ## Warning in GOSemSim::godata(orgdb, ont = ont, keytype = keytype): use 'annoDb'
+    ## instead of 'OrgDb'
+
+    ## preparing gene to GO mapping data...
+
+    ## preparing IC data...
+
+    ## Warning in calculateSimMatrix(test_df$go_term, orgdb = "org.Hs.eg.db", ont =
+    ## "BP", : Removed 87 terms that were not found in orgdb for BP
+
+``` r
+scores <- setNames(-log10(test_df$se_right_pval), test_df$go_term)
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.9,
+                                orgdb="org.Hs.eg.db")
+```
+
+    ## 'select()' returned 1:many mapping between keys and columns
+
+``` r
+right_sig_plot = scatterPlot(simMatrix, reducedTerms)
+right_sig_plot
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/go_summary-1.png)<!-- -->
+
+``` r
+test_df = go_conserved_coexp_df
+#Replace 0 pvalues with the minimum pvalue
+non_zero_smallest_p <- test_df %>% filter(se_left_pval != 0) %>% pull(se_left_pval) %>% min()
+test_df = test_df %>% mutate(se_left_pval = if_else(se_left_pval == 0, non_zero_smallest_p, se_left_pval))
+#Filter by gene set size and pvalue
+test_df = test_df %>% filter(num_genes >=20 & num_genes <= 250 & se_left_pval <= .0001)
+#rrvgo functions, gets similarity between terms, then reduces into broader groups
+#ontology is BP CC or MF
+simMatrix <- calculateSimMatrix(test_df$go_term,
+                                orgdb="org.Hs.eg.db",
+                                ont="BP",
+                                method="Rel")
+```
+
+    ## Warning in GOSemSim::godata(orgdb, ont = ont, keytype = keytype): use 'annoDb'
+    ## instead of 'OrgDb'
+
+    ## preparing gene to GO mapping data...
+    ## preparing IC data...
+
+    ## Warning in calculateSimMatrix(test_df$go_term, orgdb = "org.Hs.eg.db", ont =
+    ## "BP", : Removed 15 terms that were not found in orgdb for BP
+
+``` r
+scores <- setNames(-log10(test_df$se_left_pval), test_df$go_term)
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.9,
+                                orgdb="org.Hs.eg.db")
+```
+
+    ## 'select()' returned 1:many mapping between keys and columns
+
+``` r
+left_sig_plot = scatterPlot(simMatrix, reducedTerms)
+left_sig_plot
+```
+
+    ## Warning: ggrepel: 5 unlabeled data points (too many overlaps). Consider
+    ## increasing max.overlaps
+
+![](figure_plots_with_data_code_files/figure-gfm/go_summary-2.png)<!-- -->
+
+## Figure 4G
+
+Need to go back and save the go enrichment results
+
+## Figure 5B
+
+``` r
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_nProg_v4.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_divProg_v4.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_intProg_v4.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_gaba_v4.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_glut_v4.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_nonN_v4.Rdata')
+
+time_palette = met.brewer("Tam", 8)
+organoid_time_palette = c('day_23' = time_palette[1],'month_1' = time_palette[2],'month_1_5' = time_palette[3],'month_2' = time_palette[4],'month_3' = time_palette[5],
+                          'month_4' = time_palette[6],'month_5' = time_palette[7],'month_6' = time_palette[8])
+
+
+org_ages = c(all_sample_meta$Age[1:26])
+org_ages[org_ages == 'month_1 '] = 'month_1'
+names(org_ages) = all_sample_meta$sample_ids[1:26]
+
+#Actually drop the aggregate score, there is a temporal trend and we want to highlight it
+org_nProg_time_cons_coexp_matrix = org_nProg_time_cons_coexp_matrix[, !colnames(org_nProg_time_cons_coexp_matrix) %in% c('aggregate', 'GW7-28')]
+org_divProg_time_cons_coexp_matrix = org_divProg_time_cons_coexp_matrix[, !colnames(org_divProg_time_cons_coexp_matrix) %in% c('aggregate', 'GW7-28')]
+org_intProg_time_cons_coexp_matrix = org_intProg_time_cons_coexp_matrix[, !colnames(org_intProg_time_cons_coexp_matrix)%in% c('aggregate', 'GW7-28')]
+org_gaba_time_cons_coexp_matrix = org_gaba_time_cons_coexp_matrix[, !colnames(org_gaba_time_cons_coexp_matrix) %in% c('aggregate', 'GW7-28')]
+org_glut_time_cons_coexp_matrix = org_glut_time_cons_coexp_matrix[, !colnames(org_glut_time_cons_coexp_matrix) %in% c('aggregate', 'GW7-28')]
+org_nonN_time_cons_coexp_matrix = org_nonN_time_cons_coexp_matrix[, !colnames(org_nonN_time_cons_coexp_matrix) %in% c('aggregate', 'GW7-28')]
+
+
+
+
+nProg_time_df = data.frame( org_nProg_time_cons_coexp_matrix)
+nProg_time_df  = reshape2::melt(t(nProg_time_df), varnames = c('Fetal_timepoint','Organoid_dataset'), value.name = 'Conserved_Coexpression_score')
+nProg_time_df$Organoid_timepoint = org_ages[nProg_time_df$Organoid_dataset]
+
+ggplot(nProg_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  ylab('Conserved Coexpression score') + xlab('Fetal coexpression networks (Gestational Week)') + ylim(.5, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Neural Progenitors')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/organoid_timeseries_presCoexp-1.png)<!-- -->
+
+``` r
+divProg_time_df = data.frame( org_divProg_time_cons_coexp_matrix)
+divProg_time_df  = reshape2::melt(t(divProg_time_df), varnames = c('Fetal_timepoint','Organoid_dataset'), value.name = 'Conserved_Coexpression_score')
+divProg_time_df$Organoid_timepoint = org_ages[divProg_time_df$Organoid_dataset]
+
+ggplot(divProg_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  ylab('Conserved Coexpression score') + xlab('Fetal coexpression networks (Gestational Week)') + ylim(.5, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Dividing Progenitors')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/organoid_timeseries_presCoexp-2.png)<!-- -->
+
+``` r
+intProg_time_df = data.frame( org_intProg_time_cons_coexp_matrix)
+intProg_time_df  = reshape2::melt(t(intProg_time_df), varnames = c('Fetal_timepoint','Organoid_dataset'), value.name = 'Conserved_Coexpression_score')
+intProg_time_df$Organoid_timepoint = org_ages[intProg_time_df$Organoid_dataset]
+
+
+ggplot(intProg_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  ylab('Conserved Coexpression score') + xlab('Fetal coexpression networks (Gestational Week)') + ylim(.5, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Intermediate Progenitors')
+```
+
+    ## Warning: Removed 78 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+    ## Warning: Removed 26 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+![](figure_plots_with_data_code_files/figure-gfm/organoid_timeseries_presCoexp-3.png)<!-- -->
+
+``` r
+glut_time_df = data.frame( org_glut_time_cons_coexp_matrix)
+glut_time_df  = reshape2::melt(t(glut_time_df), varnames = c('Fetal_timepoint','Organoid_dataset'), value.name = 'Conserved_Coexpression_score')
+glut_time_df$Organoid_timepoint = org_ages[glut_time_df$Organoid_dataset]
+
+ggplot(glut_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  ylab('Conserved Coexpression score') + xlab('Fetal coexpression networks (Gestational Week)') + ylim(.5, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Glutamatergic Neurons')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/organoid_timeseries_presCoexp-4.png)<!-- -->
+
+``` r
+gaba_time_df = data.frame( org_gaba_time_cons_coexp_matrix)
+gaba_time_df  = reshape2::melt(t(gaba_time_df), varnames = c('Fetal_timepoint','Organoid_dataset'), value.name = 'Conserved_Coexpression_score')
+gaba_time_df$Organoid_timepoint = org_ages[gaba_time_df$Organoid_dataset]
+
+ggplot(gaba_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  ylab('Conserved Coexpression score') + xlab('Fetal coexpression networks (Gestational Week)') + ylim(.5, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('GABAergic Neurons')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/organoid_timeseries_presCoexp-5.png)<!-- -->
+
+``` r
+nonN_time_df = data.frame( org_nonN_time_cons_coexp_matrix)
+nonN_time_df  = reshape2::melt(t(nonN_time_df), varnames = c('Fetal_timepoint','Organoid_dataset'), value.name = 'Conserved_Coexpression_score')
+nonN_time_df$Organoid_timepoint = org_ages[nonN_time_df$Organoid_dataset]
+
+ggplot(nonN_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score, color = Organoid_timepoint, group = Organoid_dataset)) + geom_point() + geom_line() +
+  ylab('Conserved Coexpression score') + xlab('Fetal coexpression networks (Gestational Week)') + ylim(.5, 1) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + scale_color_manual(values = organoid_time_palette) +
+  ggtitle('Non-neuronal')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/organoid_timeseries_presCoexp-6.png)<!-- -->
+
+## Figure 6A
+
+``` r
+rugen_time = load(file = 'data_for_plots/coexp_time_sample_mats.Rdata')
+rugen_time = get(rugen_time)
+
+mac_time = load(file = 'data_for_plots/mac_time_mat.Rdata')
+mac_time = get(mac_time)
+
+colnames(mac_time) = c('10k cells','15k cells','20k cells','25k cells','30k cells','35k cells','40k cells')
+
+
+rugen_time_sd = apply(rugen_time/60, 2, sd)
+rugen_time_mean = colMeans(rugen_time/60)
+
+mac_time_sd = apply(mac_time/60, 2, sd)
+mac_time_mean = colMeans(mac_time/60)
+
+label_vec = c(rep('rugen', length = length(rugen_time_mean)), rep('macBook', length = length(mac_time_mean)))
+time_mat_df = data.frame(num_cells = c(names(rugen_time_mean), names(mac_time_mean)), mean_time_mins = c(rugen_time_mean, mac_time_mean), sd_mins = c(rugen_time_sd, mac_time_sd),
+                         label = label_vec)
+time_mat_df$num_cells = factor(time_mat_df$num_cells, levels = c("10k cells","15k cells","20k cells", "25k cells","30k cells", "35k cells","40k cells","50k cells","60k cells",
+                                                                 "70k cells","80k cells","90k cells","100k cells"))
+
+
+ggplot(time_mat_df, aes(x = num_cells, y = mean_time_mins, group = label, color = label)) + geom_line(linetype = 'dashed') + geom_point(size = 2.5, color = 'black') +
+  geom_errorbar(aes(ymin=mean_time_mins-sd_mins, ymax=mean_time_mins+sd_mins), width=.75) +
+  scale_color_manual(values = c('macBook' = 'blue', 'rugen' = 'red')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('Time (minutes)') + ggtitle('Computing co-expression networks')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/presCoexp_time-1.png)<!-- -->
+
+``` r
+rugen_genes = load(file = 'data_for_plots/presCoexp_time_sample_mats.Rdata')
+rugen_genes = get(rugen_genes)
+colnames(rugen_genes) = seq(1000, 20000, 1000)
+
+
+mac_genes = load(file = 'data_for_plots/mac_time_genes_mat.Rdata')
+mac_genes = get(mac_genes)
+colnames(mac_genes) = seq(1000, 20000, 1000)
+
+
+rugen_mat_genes_sd = apply(rugen_genes/60, 2, sd)
+rugen_mat_genes_mean = colMeans(rugen_genes/60)
+
+mac_mat_genes_sd = apply(mac_genes/60, 2, sd)
+mac_mat_genes_mean = colMeans(mac_genes/60)
+
+label_vec = c(rep('rugen', length = length(rugen_mat_genes_mean)), rep('mac', length = length(mac_mat_genes_mean)))
+
+time_mat_genes_df = data.frame(num_genes = c(names(rugen_mat_genes_mean), names(mac_mat_genes_mean)), mean_time_mins = c(rugen_mat_genes_mean, mac_mat_genes_mean), 
+                               sd_mins = c(rugen_mat_genes_sd, mac_mat_genes_sd), label = label_vec)
+time_mat_genes_df$num_genes = factor(time_mat_genes_df$num_genes, levels = unique(time_mat_genes_df$num_genes))
+
+ggplot(time_mat_genes_df, aes(x = num_genes, y = mean_time_mins, group = label, color = label)) + geom_line(linetype = 'dashed') + geom_point(size = 2.5, color = 'black') +
+  geom_errorbar(aes(ymin=mean_time_mins-sd_mins, ymax=mean_time_mins+sd_mins), width=.75) +
+  scale_color_manual(values = c('mac' = 'blue', 'rugen' = 'red')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of genes') + ylab('Time (minutes)') + ggtitle('Computing preserved co-expression')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/presCoexp_time-2.png)<!-- -->
