@@ -1,0 +1,2448 @@
+
+conservation of fetal co-expression within neural organoids
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(MetBrewer)
+library(ComplexHeatmap)
+library(circlize)
+library(EGAD)
+library(parallel)
+
+```
+
+
+
+Fetal data
+```{r}
+
+
+human_fetal_dataset_names = c( 'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
+                               'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
+                               'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
+                               'linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2',
+                               'linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13', 'linnarsson_GW14',
+                               'fan_fu','poliodakis_batch1', 'poliodakis_batch2','areal_GW14','areal_GW16','areal_GW18','areal_GW18_2','areal_GW19','areal_GW19_2', 
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW22','areal_GW22T','areal_GW25','shi_wang','zhou_lu',
+                               'yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4',
+                               'trevino_greenleaf_1','trevino_greenleaf_2','trevino_greenleaf_3','trevino_greenleaf_4')
+
+human_fetal_dataset_paths = list('../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata',
+                                 '../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
+                                 '../data/seurat_objs/individual/shi_wang_seurat_processed.Rdata', 
+                                 '../data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032680_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032681_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032682_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032683_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata')
+
+names(human_fetal_dataset_paths)= human_fetal_dataset_names 
+human_fetal_dataset_paths
+
+```
+
+
+```{r}
+class_palette = met.brewer("Archambault", 20)
+class_palette
+
+fetal_class_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 'Glutamatergic' = class_palette[14], 'Neural_Progenitor' = class_palette[4], 
+                  'Dividing_Progenitor' = class_palette[10], 'Intermediate_Progenitor' = class_palette[16], 'Microglia/Immune' = class_palette[18], 
+                  'other' = 'grey')
+fetal_class_palette
+
+```
+
+```{r}
+#Number of cells across all fetal datasets
+fetal_cell_num = vector(mode = 'numeric', length = length(human_fetal_dataset_paths))
+
+for(i in 1:length(fetal_cell_num)){
+
+  current_dataset = human_fetal_dataset_names[i]
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  suppressWarnings(rm(fan_fu_dataset, poliodakis_dataset_batch1, poliodakis_dataset_batch2, GW14_merged_dataset, GW16_merged_dataset, 
+                      GW18_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset, 
+                      GW19_2_merged_dataset, GW20_merged_dataset, GW20_31_merged_dataset, GW20_34_merged_dataset,GW22_merged_dataset,GW22T_merged_dataset,
+                      GW25_merged_dataset, shi_wang_dataset, yu_sun_1, yu_sun_2, yu_sun_3, yu_sun_4, zhou_lu_dataset, 
+                      trevino_dataset_batch1,trevino_dataset_batch2,trevino_dataset_batch3,trevino_dataset_batch4, seurat_object))
+  gc()
+  #Unannotated datasets dont get umaps
+  if(!i %in% c(31, 32, 39, 40, 42:51)){
+    DimPlot(dataset, group.by = 'labeled_classes',pt.size = 1.5, raster = T ) + scale_color_manual(values = fetal_class_palette) + 
+    theme(legend.position = 'none', axis.text = element_blank(), axis.title = element_blank(), axis.ticks = element_blank(), plot.title = element_blank())
+    file_name = sprintf('%s_small_annot_umap_v2.pdf', current_dataset)
+    ggsave(filename = file_name, path = 'graphs/fetal_datasets/small_umaps/', 
+           device = 'pdf', useDingbats = F, height = 2, width = 2)
+  }
+  
+  #Cell number
+  fetal_cell_num[i] = ncol(dataset)
+  print(i)
+}
+
+fetal_cell_num 
+sum(fetal_cell_num)
+```
+
+save one with a legend
+
+```{r}
+i = 2
+current_dataset = human_fetal_dataset_names[i]
+x = load(human_fetal_dataset_paths[[i]])
+dataset = get(x)
+rm(x) 
+
+DimPlot(dataset, group.by = 'labeled_classes', raster = T) + scale_color_manual(values = fetal_class_palette) + 
+  theme( axis.text = element_blank(), axis.title = element_blank(), axis.ticks = element_blank(), plot.title = element_blank())
+file_name = sprintf('%s_small_annot_umap_with_legend_v2.pdf', current_dataset)
+ggsave(filename = file_name, path = 'graphs/fetal_datasets/small_umaps/', 
+       device = 'pdf', useDingbats = F, height = 2, width = 2)
+
+  
+```
+
+
+
+
+
+```{r}
+sum(fetal_cell_num)
+
+#annotated first tri
+sum(fetal_cell_num[1:26])
+#annotated
+sum(fetal_cell_num[c(27:30, 33:38, 41)])
+#unannotated
+sum(fetal_cell_num[c(31, 32, 39, 40, 42:51)])
+
+```
+
+
+
+```{r}
+
+#Get colors
+class_palette = met.brewer("Archambault", 20)
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'Fetal Microglia/Immune marker' = class_palette[18],
+                         'non-marker' = 'white')
+
+
+class_celltype_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 
+                         'Glutamatergic' = class_palette[14], 
+                         'Neural_Progenitor' = class_palette[4],  
+                         'Intermediate_Progenitor' = class_palette[16], 
+                         'Dividing_Progenitor' = class_palette[10], 
+                         'Microglia/Immune' = class_palette[18], 
+                         'other' = 'white')
+
+```
+
+
+```{r}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+```
+
+```{r}
+
+load('../data/go_annotations/go_annotations.Rdata')
+```
+
+
+```{r}
+test_markers = list(
+    fan_fu = read_markers("6_26_24_annot_metaMarkers/fan_fu_fetal_class_markers.csv.gz"), 
+    poliodakis_1 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch1_fetal_class_markers.csv.gz"),
+    poliodakis_2 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch2_fetal_class_markers.csv.gz"),
+    GW14 = read_markers("6_26_24_annot_metaMarkers/areal_GW14_fetal_class_markers.csv.gz"),
+    GW18_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW18_2_fetal_class_markers.csv.gz"),
+    GW19 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_fetal_class_markers.csv.gz"),
+    GW19_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_2_fetal_class_markers.csv.gz"),
+    GW20 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_fetal_class_markers.csv.gz"),
+    GW20_31 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_31_fetal_class_markers.csv.gz"),
+    GW20_34 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_34_fetal_class_markers.csv.gz"),
+    GW25 = read_markers("6_26_24_annot_metaMarkers/areal_GW25_fetal_class_markers.csv.gz"),
+    linnarsson_GW5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW5_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-7_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_3_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_4 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_4_fetal_class_markers_v4.csv.gz"), 
+    linnarsson_GW7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW7_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_3_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_5_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_5_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW9_point_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW9_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW10 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW10_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW11_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW11-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW12 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW12_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW13 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW13_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW14 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW14_fetal_class_markers_v4.csv.gz")
+    )
+
+fetal_meta_markers = make_meta_markers(test_markers, detailed_stats = TRUE)
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+
+go_nProg = nProg_markers$gene[nProg_markers$gene %in% go_genes]
+go_nonN = nonN_markers$gene[nonN_markers$gene %in% go_genes]
+go_gaba = gaba_markers$gene[gaba_markers$gene %in% go_genes]
+go_glut = glut_markers$gene[glut_markers$gene %in% go_genes]
+go_intProg = intProg_markers$gene[intProg_markers$gene %in% go_genes & (!intProg_markers$gene %in% divProg_markers$gene)]
+go_divProg = divProg_markers$gene[divProg_markers$gene %in% go_genes]
+go_micro = micro_markers$gene[micro_markers$gene %in% go_genes]
+
+length(go_nProg)
+length(go_nonN)
+length(go_gaba)
+length(go_glut)
+length(go_divProg)
+length(go_intProg)
+length(go_micro)
+
+```
+
+
+
+#######################
+First check out the aggregated coexpression networks, compare the levels of coexpression inbetween marker sets for the unannotated fetal and organoid networks
+
+
+conservation of coexpression, getting a gene-level metric
+Grab a fetal gene, get their top 10 coexpressed genes. These are the positives
+Rank the organoid coexpression for that gene and get the AUROC.
+Do it within just the celltype marker sets first, see what's what.
+Then do for all genes in the network
+
+
+
+#######################
+
+
+The aggregated network just using go genes
+
+```{r}
+load('../data/coexpression/organoid/ranked_agg_organoid_coexp_network_6_26_24.Rdata')
+dim(organoid_ranked_aggregate)
+
+
+load('../data/coexpression/fetal/ranked_agg_fetal_coexp_network_8_17_23.Rdata')
+dim(fetal_ranked_aggregate)
+
+load(file = '../data/coexpression/fetal/ranked_agg_unannot_fetal_coexp_network_8_17_23.Rdata')
+dim(unannot_fetal_ranked_aggregate)
+```
+
+
+```{r}
+compute_auc = function(scores, label){
+  label = as.logical(label)
+  n1 = as.numeric(sum(label))
+  n2 = as.numeric(sum(!label))
+  R1 = sum(rank(scores)[label])
+  U1 = R1 - n1 * (n1 + 1)/2
+  auc = U1/(n1 * n2)
+  return(auc)
+}
+
+
+#Compute ROC curve for plotting
+#Input is a list of true/false labels (celltype identity) ranked by some metric (gene expression). 
+roc_curve = function(ranked_labels){
+
+  #Get total number of positives and negatives
+  num_pos = sum(ranked_labels)
+  num_neg = sum(!ranked_labels)
+  num_total = length(ranked_labels)
+  #Cumulative sum of positives and negatives
+  tp = cumsum(ranked_labels)
+  fp = cumsum(!ranked_labels)
+  
+  fpr = fp/num_neg
+  tpr = tp/num_pos
+  
+  return(list('fpr' = fpr, 'tpr' = tpr))
+}
+
+```
+
+
+
+```{r}
+
+get_conserved_coexp = function(network1, network2, test_gene, num_top = 10){
+
+  #Get the top 10 coexpressed genes
+  test_gene_coexp = network1[test_gene, ]
+  test_gene_coexp = test_gene_coexp[names(test_gene_coexp) != test_gene]
+  top_coexp = names(test_gene_coexp[order(test_gene_coexp, decreasing = T)][1:num_top])
+  
+  #Calculate the AUC using the organoid data
+  scores = network2[test_gene, ]
+  scores = scores[names(scores) != test_gene]
+  labels = names(scores) %in% top_coexp
+  
+  #Get the auc
+  auc = compute_auc(scores, labels)
+  return(auc)
+}
+
+
+```
+
+
+
+###################################
+Exploring individual organoid datasets
+###################################
+
+start with pasca datasets, comparing the transplanted and non-transplanted organoids
+
+
+```{r}
+pasca_files = c('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_revah_1_coexp.Rdata',
+                '../data/coexpression/organoid/6_26_24_GO_coexp/ranked_revah_2_coexp.Rdata',
+                '../data/coexpression/organoid/6_26_24_GO_coexp/ranked_revah_4_coexp.Rdata',
+                '../data/coexpression/organoid/6_26_24_GO_coexp/ranked_revah_3_coexp.Rdata',
+                '../data/coexpression/organoid/6_26_24_GO_coexp/ranked_revah_5_coexp.Rdata',
+                '../data/coexpression/organoid/6_26_24_GO_coexp/ranked_revah_6_coexp.Rdata')
+
+pasca_names = c('trans_pasca_org_batch_1', 'trans_pasca_org_batch_2', 'trans_pasca_org_batch_3',
+                'non_trans_pasca_org_batch_1', 'non_trans_pasca_org_batch_2', 'non_trans_pasca_org_batch_3')
+
+top_genes = 10
+
+nProg_cons_matrix_1 = matrix(nrow = length(go_nProg), ncol = length(pasca_files), dimnames = list(go_nProg, pasca_names))
+glut_cons_matrix_1 = matrix(nrow = length(go_glut), ncol = length(pasca_files), dimnames = list(go_glut, pasca_names))
+gaba_cons_matrix_1 = matrix(nrow = length(go_gaba), ncol = length(pasca_files), dimnames = list(go_gaba, pasca_names))
+nonN_cons_matrix_1 = matrix(nrow = length(go_nonN), ncol = length(pasca_files), dimnames = list(go_nonN, pasca_names))
+intProg_cons_matrix_1 = matrix(nrow = length(go_intProg), ncol = length(pasca_files), dimnames = list(go_intProg, pasca_names))
+divProg_cons_matrix_1 = matrix(nrow = length(go_divProg), ncol = length(pasca_files), dimnames = list(go_divProg, pasca_names))
+micro_cons_matrix_1 = matrix(nrow = length(go_micro), ncol = length(pasca_files), dimnames = list(go_micro, pasca_names))
+
+for(i in 1:length(pasca_files)){
+  load(pasca_files[i])
+  
+  fetal_nProg_cons_coexp = sapply(1:length(go_nProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_nProg[i],top_genes ) )
+  nProg_cons_matrix_1[ ,i] = fetal_nProg_cons_coexp 
+  
+  fetal_glut_cons_coexp = sapply(1:length(go_glut), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_glut[i],top_genes ) )
+  glut_cons_matrix_1[ ,i] = fetal_glut_cons_coexp 
+  
+  fetal_gaba_cons_coexp = sapply(1:length(go_gaba), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_gaba[i],top_genes ) )
+  gaba_cons_matrix_1[ ,i] = fetal_gaba_cons_coexp 
+  
+  fetal_nonN_cons_coexp = sapply(1:length(go_nonN), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_nonN[i],top_genes ) )
+  nonN_cons_matrix_1[ ,i] = fetal_nonN_cons_coexp 
+  
+  fetal_intProg_cons_coexp = sapply(1:length(go_intProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_intProg[i],top_genes ) )
+  intProg_cons_matrix_1[ ,i] = fetal_intProg_cons_coexp
+  
+  fetal_divProg_cons_coexp = sapply(1:length(go_divProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_divProg[i],top_genes ) )
+  divProg_cons_matrix_1[ ,i] = fetal_divProg_cons_coexp
+  
+  fetal_micro_cons_coexp = sapply(1:length(go_micro), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_micro[i],top_genes ) )
+  micro_cons_matrix_1[ ,i] = fetal_micro_cons_coexp
+  
+  print(i)
+
+}
+
+
+pasca_consCoexp_score_df = data.frame(nProg_scores = colSums(nProg_cons_matrix_1) / length(go_nProg),
+                                      divProg_scores = colSums(divProg_cons_matrix_1) / length(go_divProg),
+                                      intProg_scores = colSums(intProg_cons_matrix_1) / length(go_intProg),
+                                      glut_scores = colSums(glut_cons_matrix_1) / length(go_glut),
+                                      gaba_scores = colSums(gaba_cons_matrix_1) / length(go_gaba),
+                                      nonN_scores = colSums(nonN_cons_matrix_1) / length(go_nonN),
+                                      micro_scores = colSums(micro_cons_matrix_1) / length(go_micro))
+rownames(pasca_consCoexp_score_df) = pasca_names
+pasca_consCoexp_score_df = reshape2::melt(t(pasca_consCoexp_score_df))
+pasca_consCoexp_score_df$transplanted = rep('transplanted', length = nrow(pasca_consCoexp_score_df))
+pasca_consCoexp_score_df$transplanted[grepl('non_trans', pasca_consCoexp_score_df$Var2)] = 'non-transplanted'
+pasca_consCoexp_score_df$full = rep('batch', length = nrow(pasca_consCoexp_score_df))
+pasca_consCoexp_score_df$full[grepl('full',pasca_consCoexp_score_df$Var2)] = 'full'
+pasca_consCoexp_score_df
+
+ggplot(filter(pasca_consCoexp_score_df, full == 'batch'), aes(x = transplanted, y = value)) + 
+  geom_point(alpha = .5, size = 2) + 
+  geom_point(data = filter(pasca_consCoexp_score_df, full == 'full'), color = 'red', size = 3, alpha = .5) +
+  facet_wrap(~Var1) + ylim(.4, 1) + ylab('Preserved Co-expression AUROC') + ggtitle('Preservation of Fetal Co-expression')
+
+ggsave(filename = 'pasca_transplant_consCoexp_fetal_celltypes_v4.pdf', path = 'graphs/coexpression/conserved_coexpression/pasca_transplant/', 
+       device = 'pdf', 
+       height = 4, width = 6, useDingbats = F)
+```
+
+
+
+normalize to the average of the non-transplanted and plot log2 FC
+just for glut, gaba, and nonN
+
+
+
+and do the same but for all genes, get the average consCoexp auroc across all the genes
+
+
+
+```{r}
+mean_pasca_consCoexp_vec = vector(mode = 'numeric', length = length(pasca_files))
+names(mean_pasca_consCoexp_vec) = pasca_names
+
+for(i in 1:length(pasca_files)){
+  start = Sys.time()
+  load(pasca_files[i])
+  org_all_cons_coexp = sapply(1:length(go_genes), 
+                              function(i) get_conserved_coexp(fetal_ranked_aggregate,rank_corr_matrix, go_genes[i] ) )
+  mean_pasca_consCoexp_vec[i] = mean( org_all_cons_coexp)
+  end = Sys.time()
+  print(end - start)
+  
+}
+
+mean_pasca_consCoexp_df = data.frame(non_transplanted = mean_pasca_consCoexp_vec[4:6],
+                                     transplanted = mean_pasca_consCoexp_vec[1:3])
+
+rownames(mean_pasca_consCoexp_df) = c('batch1','batch2','batch3')
+mean_pasca_consCoexp_df
+mean_pasca_consCoexp_df = reshape2::melt(t(mean_pasca_consCoexp_df))
+mean_pasca_consCoexp_df
+
+
+ggplot(mean_pasca_consCoexp_df, aes(x = Var1, y = value)) + 
+  geom_point(size = 2, alpha = .5) +
+  #geom_point(data = filter(mean_pasca_consCoexp_df, Var2 == 'full'), size = 3, alpha = .5, color = 'red') +
+  ylab('Mean Preserved Co-expression AUROC') + ylim(.5, .75) + ggtitle('Preservation of Fetal Co-expression')
+
+
+ggsave(filename = 'pasca_transplant_consCoexp_fetal_full_genome_v4.pdf', path = 'graphs/coexpression/conserved_coexpression/pasca_transplant/', 
+       device = 'pdf', 
+       height = 4, width = 6, useDingbats = F)
+```
+
+save the data
+```{r}
+
+save(pasca_consCoexp_score_df, mean_pasca_consCoexp_df, file = '../data/coexpression/transplanted_org/pasca_fetal_consCoexp_v2.Rdata')
+```
+
+
+```{r}
+
+
+#Get the means of the non tranplanted data
+fetal_glut_nonT_mean = mean(filter(pasca_consCoexp_score_df,transplanted == 'non-transplanted' & Var1 == 'glut_scores')$value)
+fetal_gaba_nonT_mean = mean(filter(pasca_consCoexp_score_df,transplanted == 'non-transplanted' & Var1 == 'gaba_scores')$value)
+fetal_nonN_nonT_mean = mean(filter(pasca_consCoexp_score_df, transplanted == 'non-transplanted' & Var1 == 'nonN_scores')$value)
+
+
+mean_norm_vec = rep(NA, length = nrow(pasca_consCoexp_score_df))
+
+glut_index = pasca_consCoexp_score_df$Var1 == 'glut_scores'
+mean_norm_vec[glut_index] = pasca_consCoexp_score_df$value[glut_index] / fetal_glut_nonT_mean
+gaba_index = pasca_consCoexp_score_df$Var1 == 'gaba_scores'
+mean_norm_vec[gaba_index] = pasca_consCoexp_score_df$value[gaba_index] / fetal_gaba_nonT_mean
+nonN_index = pasca_consCoexp_score_df$Var1 == 'nonN_scores'
+mean_norm_vec[nonN_index] = pasca_consCoexp_score_df$value[nonN_index] / fetal_nonN_nonT_mean
+
+mean_norm_vec = log(mean_norm_vec, base = 2)
+pasca_consCoexp_score_df$nonT_FC = mean_norm_vec
+pasca_consCoexp_score_df
+
+
+ggplot(filter(pasca_consCoexp_score_df,Var1 %in% c('glut_scores','gaba_scores','nonN_scores')), aes(x = transplanted, y = nonT_FC)) + 
+  geom_point(size = 2, alpha = .5) + facet_wrap(~Var1) +
+  ylab('log2(Non-transplanted fold change)') + ggtitle('Preservation of Fetal Co-expression')
+ggsave(filename = 'pasca_transplant_consCoexp_fetal_celltypes_log2FC_v4.pdf', path = 'graphs/coexpression/conserved_coexpression/pasca_transplant/', 
+       device = 'pdf', 
+       height = 4, width = 6, useDingbats = F)
+```
+
+
+```{r}
+
+load('../data/coexpression/transplanted_org/pasca_fetal_consCoexp_v2.Rdata')
+
+
+```
+
+```{r}
+
+pasca_consCoexp_score_df %>% filter(transplanted == 'non-transplanted' & full != 'full') %>% group_by(Var1) %>% summarize(mean = mean(value), sd = sd(value))
+pasca_consCoexp_score_df %>% filter(transplanted == 'transplanted' & full != 'full') %>% group_by(Var1) %>% summarize(mean = mean(value), sd = sd(value))
+```
+
+
+
+```{r}
+all_sample_meta = read.csv('../data/seurat_objs/revised_all_data_just_meta_v2.csv')
+dim(all_sample_meta)
+```
+
+
+
+
+```{r}
+
+top_genes = 10
+
+nProg_cons_matrix_1 = matrix(nrow = length(go_nProg), ncol = nrow(all_sample_meta), dimnames = list(go_nProg, all_sample_meta$sample_ids))
+glut_cons_matrix_1 = matrix(nrow = length(go_glut), ncol = nrow(all_sample_meta), dimnames = list(go_glut, all_sample_meta$sample_ids))
+gaba_cons_matrix_1 = matrix(nrow = length(go_gaba), ncol = nrow(all_sample_meta), dimnames = list(go_gaba, all_sample_meta$sample_ids))
+nonN_cons_matrix_1 = matrix(nrow = length(go_nonN), ncol = nrow(all_sample_meta), dimnames = list(go_nonN, all_sample_meta$sample_ids))
+intProg_cons_matrix_1 = matrix(nrow = length(go_intProg), ncol = nrow(all_sample_meta), dimnames = list(go_intProg, all_sample_meta$sample_ids))
+divProg_cons_matrix_1 = matrix(nrow = length(go_divProg), ncol = nrow(all_sample_meta), dimnames = list(go_divProg, all_sample_meta$sample_ids))
+micro_cons_matrix_1 = matrix(nrow = length(go_micro), ncol = nrow(all_sample_meta), dimnames = list(go_micro, all_sample_meta$sample_ids))
+
+for(i in 1:nrow(all_sample_meta)){
+
+  start = Sys.time()
+  load(sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[i]))
+  
+  fetal_nProg_cons_coexp = sapply(1:length(go_nProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_nProg[i],top_genes ) )
+  nProg_cons_matrix_1[ ,i] = fetal_nProg_cons_coexp 
+  
+  fetal_glut_cons_coexp = sapply(1:length(go_glut), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_glut[i],top_genes ) )
+  glut_cons_matrix_1[ ,i] = fetal_glut_cons_coexp 
+  
+  fetal_gaba_cons_coexp = sapply(1:length(go_gaba), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_gaba[i],top_genes ) )
+  gaba_cons_matrix_1[ ,i] = fetal_gaba_cons_coexp 
+  
+  fetal_nonN_cons_coexp = sapply(1:length(go_nonN), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_nonN[i],top_genes ) )
+  nonN_cons_matrix_1[ ,i] = fetal_nonN_cons_coexp 
+  
+  fetal_intProg_cons_coexp = sapply(1:length(go_intProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_intProg[i],top_genes ) )
+  intProg_cons_matrix_1[ ,i] = fetal_intProg_cons_coexp
+  
+  fetal_divProg_cons_coexp = sapply(1:length(go_divProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_divProg[i],top_genes ) )
+  divProg_cons_matrix_1[ ,i] = fetal_divProg_cons_coexp
+    
+  fetal_micro_cons_coexp = sapply(1:length(go_micro), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_micro[i],top_genes ) )
+  micro_cons_matrix_1[ ,i] = fetal_micro_cons_coexp
+  
+  print(i)
+  print(Sys.time() - start)
+
+}
+
+
+nProg_cons_matrix_1[1:10, 1:10]
+
+```
+
+
+
+```{r}
+
+#Order genes based on mean conservation value
+nProg_cons_matrix = reshape2::melt(t(nProg_cons_matrix_1))
+mean_order_df = nProg_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+nProg_cons_matrix$Var2  = factor(nProg_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(nProg_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Neural Progenitor markers') + 
+  theme(axis.text.x = element_blank()) 
+
+intProg_cons_matrix = reshape2::melt(t(intProg_cons_matrix_1))
+mean_order_df = intProg_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+intProg_cons_matrix$Var2  = factor(intProg_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(intProg_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Intermediate Progenitor markers') + 
+  theme(axis.text.x = element_blank()) 
+
+divProg_cons_matrix = reshape2::melt(t(divProg_cons_matrix_1))
+mean_order_df = divProg_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+divProg_cons_matrix$Var2  = factor(divProg_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(divProg_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Dividing Progenitor markers') + 
+  theme(axis.text.x = element_blank()) 
+
+
+glut_cons_matrix = reshape2::melt(t(glut_cons_matrix_1))
+mean_order_df = glut_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+glut_cons_matrix$Var2  = factor(glut_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(glut_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Glutamatergic markers') + 
+  theme(axis.text.x = element_blank()) 
+
+gaba_cons_matrix = reshape2::melt(t(gaba_cons_matrix_1))
+mean_order_df = gaba_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+gaba_cons_matrix$Var2  = factor(gaba_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(gaba_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal GABAergic markers') + 
+  theme(axis.text.x = element_blank()) 
+
+nonN_cons_matrix = reshape2::melt(t(nonN_cons_matrix_1))
+mean_order_df = nonN_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+nonN_cons_matrix$Var2  = factor(nonN_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(nonN_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Non-neuronal markers') + 
+  theme(axis.text.x = element_blank()) 
+
+micro_cons_matrix = reshape2::melt(t(micro_cons_matrix_1))
+mean_order_df = micro_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+micro_cons_matrix$Var2  = factor(micro_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(micro_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Microglia/Immune markers') + 
+  theme(axis.text.x = element_blank()) 
+```
+
+
+
+
+check against the conserved coexpression of the glutamtergic markers in the organoid datasets
+
+```{r}
+table(go_intProg %in% go_divProg)
+
+sum_nProg_cons_coexp = colSums(nProg_cons_matrix_1)
+sum_intProg_cons_coexp = colSums(intProg_cons_matrix_1) 
+sum_divProg_cons_coexp = colSums(divProg_cons_matrix_1)
+sum_glut_cons_coexp = colSums(glut_cons_matrix_1)
+sum_gaba_cons_coexp = colSums(gaba_cons_matrix_1)
+sum_nonN_cons_coexp = colSums(nonN_cons_matrix_1)
+
+hist(sum_nProg_cons_coexp)
+hist(sum_intProg_cons_coexp)
+hist(sum_divProg_cons_coexp)
+hist(sum_glut_cons_coexp)
+hist(sum_gaba_cons_coexp)
+hist(sum_nonN_cons_coexp)
+
+par(pty = 's')
+plot(sum_nProg_cons_coexp, sum_glut_cons_coexp, xlab = 'Strength of conserved coexp (Progenitors)', ylab = 'Strength of conserved coexp (Glut)')
+plot(sum_nProg_cons_coexp, sum_gaba_cons_coexp, xlab = 'Strength of conserved coexp (Progenitors)', ylab = 'Strength of conserved coexp (GABA)')
+plot(sum_nProg_cons_coexp, sum_nonN_cons_coexp, xlab = 'Strength of conserved coexp (Progenitors)', ylab = 'Strength of conserved coexp (nonN)')
+
+plot(sum_intProg_cons_coexp, sum_glut_cons_coexp, xlab = 'Strength of conserved coexp (Int Progenitors)', ylab = 'Strength of conserved coexp (Glut)')
+plot(sum_intProg_cons_coexp, sum_gaba_cons_coexp, xlab = 'Strength of conserved coexp (Int Progenitors)', ylab = 'Strength of conserved coexp (GABA)')
+plot(sum_intProg_cons_coexp, sum_nonN_cons_coexp, xlab = 'Strength of conserved coexp (Int Progenitors)', ylab = 'Strength of conserved coexp (nonN)')
+
+
+plot(sum_divProg_cons_coexp, sum_glut_cons_coexp, xlab = 'Strength of conserved coexp (Div Progenitors)', ylab = 'Strength of conserved coexp (Glut)')
+plot(sum_divProg_cons_coexp, sum_gaba_cons_coexp, xlab = 'Strength of conserved coexp (Div Progenitors)', ylab = 'Strength of conserved coexp (GABA)')
+plot(sum_divProg_cons_coexp, sum_nonN_cons_coexp, xlab = 'Strength of conserved coexp (Div Progenitors)', ylab = 'Strength of conserved coexp (nonN)')
+
+
+plot(sum_nProg_cons_coexp, sum_intProg_cons_coexp, xlab = 'Strength of conserved coexp (Progenitors)', ylab = 'Strength of conserved coexp (Int Progenitors)')
+plot(sum_nProg_cons_coexp, sum_divProg_cons_coexp, xlab = 'Strength of conserved coexp (Progenitors)', ylab = 'Strength of conserved coexp (Div Progenitors)')
+plot(sum_intProg_cons_coexp, sum_divProg_cons_coexp, xlab = 'Strength of conserved coexp (Int Progenitors)', ylab = 'Strength of conserved coexp (Div Progenitors)')
+```
+
+
+
+```{r}
+
+nProg_sum_matrix = nProg_cons_matrix%>% group_by(Var1) %>% summarize(sum = sum(value))
+intProg_sum_matrix = intProg_cons_matrix%>% group_by(Var1) %>% summarize(sum = sum(value))
+divProg_sum_matrix = divProg_cons_matrix%>% group_by(Var1) %>% summarize(sum = sum(value))
+glut_sum_matrix = glut_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value))
+gaba_sum_matrix = gaba_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value))
+nonN_sum_matrix = nonN_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value))
+micro_sum_matrix = micro_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value))
+
+par(pty = 's')
+plot(divProg_sum_matrix$sum, nProg_sum_matrix$sum, main = 'Dividing vs RG', xlab = 'Sum Conservation Coexp (Dividing)', ylab = 'Sum Conservation Coexp (RG)')
+plot(divProg_sum_matrix$sum, glut_sum_matrix$sum, main = 'Dividing vs glutamatergic', xlab = 'Sum Conservation Coexp (Dividing)', ylab = 'Sum Conservation Coexp (Glut)')
+plot(divProg_sum_matrix$sum, gaba_sum_matrix$sum, main = 'Dividing vs GABAergic', xlab = 'Sum Conservation Coexp (Dividing)', ylab = 'Sum Conservation Coexp (GABA)')
+plot(divProg_sum_matrix$sum, nonN_sum_matrix$sum, main = 'Dividing vs nonNeuronal', xlab = 'Sum Conservation Coexp (Dividing)', ylab = 'Sum Conservation Coexp (nonN)')
+
+plot(nProg_sum_matrix$sum, glut_sum_matrix$sum, main = 'RG vs glutamatergic', xlab = 'Sum Conservation Coexp (RG)', ylab = 'Sum Conservation Coexp (Glut)')
+plot(nProg_sum_matrix$sum, gaba_sum_matrix$sum, main = 'RG vs GABAergic', xlab = 'Sum Conservation Coexp (RG)', ylab = 'Sum Conservation Coexp (GABA)')
+plot(nProg_sum_matrix$sum, nonN_sum_matrix$sum, main = 'RG vs nonNeuronal', xlab = 'Sum Conservation Coexp (RG)', ylab = 'Sum Conservation Coexp (nonN)')
+
+plot(intProg_sum_matrix$sum, glut_sum_matrix$sum, main = 'RG vs glutamatergic', xlab = 'Sum Conservation Coexp (RG)', ylab = 'Sum Conservation Coexp (Glut)')
+plot(intProg_sum_matrix$sum, gaba_sum_matrix$sum, main = 'RG vs GABAergic', xlab = 'Sum Conservation Coexp (RG)', ylab = 'Sum Conservation Coexp (GABA)')
+plot(intProg_sum_matrix$sum, nonN_sum_matrix$sum, main = 'RG vs nonNeuronal', xlab = 'Sum Conservation Coexp (RG)', ylab = 'Sum Conservation Coexp (nonN)')
+
+
+cor(nProg_sum_matrix$sum, glut_sum_matrix$sum, method = 'pearson')
+cor(nProg_sum_matrix$sum, gaba_sum_matrix$sum, method = 'pearson')
+cor(nProg_sum_matrix$sum, nonN_sum_matrix$sum, method = 'pearson')
+
+cor(intProg_sum_matrix$sum, glut_sum_matrix$sum, method = 'pearson')
+cor(intProg_sum_matrix$sum, gaba_sum_matrix$sum, method = 'pearson')
+cor(intProg_sum_matrix$sum, nonN_sum_matrix$sum, method = 'pearson')
+
+cor(nProg_sum_matrix$sum, intProg_sum_matrix$sum, method = 'pearson')
+
+```
+```{r}
+length(go_nProg)
+length(go_intProg)
+length(go_divProg)
+length(go_glut)
+length(go_gaba)
+length(go_nonN)
+length(go_micro)
+```
+
+
+###########################
+Trying to see what other variables track with the conserved coexpression metric per organoid dataset
+Number of cells, sequencing depth, sparsity of the individual coexpression networks?
+
+Add in the egad scores too
+and individual marker set sparsity scores. Proportion of marker set that was zero padded when squeezing to GO genes
+#########################
+
+
+```{r}
+#First add the conserved coexpression metric to the organoid dataset metadata
+#Normalize the sums of the conservation AUCs by the number of markers, squeezes it between 0-1 and caan easly compare across the datasets (fetal)
+table(nonN_sum_matrix$Var1 == all_sample_meta$sample_ids)
+all_sample_meta$dividing_cons_coexp_metric = divProg_sum_matrix$sum/length(go_divProg)
+all_sample_meta$intProg_cons_coexp_metric = intProg_sum_matrix$sum/length(go_intProg)
+all_sample_meta$nProg_cons_coexp_metric = nProg_sum_matrix$sum/length(go_nProg)
+all_sample_meta$glut_cons_coexp_metric = glut_sum_matrix$sum/length(go_glut)
+all_sample_meta$gaba_cons_coexp_metric = gaba_sum_matrix$sum/length(go_gaba)
+all_sample_meta$nonN_cons_coexp_metric = nonN_sum_matrix$sum/length(go_nonN)
+all_sample_meta$micro_cons_coexp_metric = micro_sum_matrix$sum/length(go_micro)
+```
+
+
+
+
+And add the EGAD scores to the metadata
+
+```{r}
+load('../data/coexpression/organoid/organoid_egad_results_ranked_6_26_24.Rdata')
+
+#All the marker set scores per dataset
+marker_set_organoid_egad_scores = filter(organoid_egad_results, grepl('markers', goterms) & variable == 'auc')
+marker_set_organoid_egad_scores$sample_label = rep('organoid', nrow(marker_set_organoid_egad_scores))
+
+#Drop the variable column
+marker_set_organoid_egad_scores =marker_set_organoid_egad_scores %>% mutate(variable = NULL)
+marker_set_organoid_egad_scores
+
+
+#Add EGAD marker scores to the metadata
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'gaba_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_gaba_markers = filter(marker_set_organoid_egad_scores, goterms == 'gaba_markers')$value
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'glut_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_glut_markers = filter(marker_set_organoid_egad_scores, goterms == 'glut_markers')$value
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'nonN_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_nonN_markers = filter(marker_set_organoid_egad_scores, goterms == 'nonN_markers')$value
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'intProg_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_intProg_markers = filter(marker_set_organoid_egad_scores, goterms == 'intProg_markers')$value
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'divProg_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_divProg_markers = filter(marker_set_organoid_egad_scores, goterms == 'divProg_markers')$value
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'nProg_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_nProg_markers = filter(marker_set_organoid_egad_scores, goterms == 'nProg_markers')$value
+
+table(filter(marker_set_organoid_egad_scores, goterms == 'micro_markers')$dataset == all_sample_meta$sample_ids)
+all_sample_meta$egad_auc_micro_markers = filter(marker_set_organoid_egad_scores, goterms == 'micro_markers')$value
+
+```
+
+
+
+
+```{r}
+
+par(pty = 's')
+#plot(log10(all_sample_meta$num_cells), all_sample_meta$rg_cons_coexp_metric)
+plot(log10(as.numeric(all_sample_meta$post_qc_cell_number)), all_sample_meta$nProg_cons_coexp_metric)
+
+cor(log10(as.numeric(all_sample_meta$post_qc_cell_number)), all_sample_meta$nProg_cons_coexp_metric, method = 'pearson')
+cor(log10(as.numeric(all_sample_meta$post_qc_cell_number)), all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+```
+
+
+```{r}
+#Number of missing marker genes missing from the dataset, would be zero padded
+go_nProg_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_divProg_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_intProg_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_gaba_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_glut_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_nonN_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_micro_missing_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+
+#Number of present marker genes with 0 expression
+go_nProg_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_divProg_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_intProg_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_glut_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_gaba_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_nonN_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_micro_no_exp_ratio = vector(mode = 'numeric', length = nrow(all_sample_meta))
+
+#Mean number of total counts per gene for the present marker set
+go_nProg_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_divProg_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_intProg_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_glut_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_gaba_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_nonN_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_micro_mean_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+
+#Median number of total counts per gene for the present marker set
+go_nProg_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_divProg_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_intProg_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_glut_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_gaba_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_nonN_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+go_micro_median_counts = vector(mode = 'numeric', length = nrow(all_sample_meta))
+
+for(i in 1:nrow(all_sample_meta)){
+
+  x = load(all_sample_meta$processed_seurat_path[i])
+  current_dataset = get(x)
+  rm(seurat_object, dataset, x)
+  gc()
+  
+  
+  dataset_genes = rownames(current_dataset)
+  
+  #Ratios of injected 0s from the marker sets. If contributing to low performance, expected to have an inverse relationship (high marker zero padding -> low performance)
+  go_nProg_missing_ratio[i] = sum(!go_nProg %in% dataset_genes) / length(go_nProg)
+  go_divProg_missing_ratio[i] = sum(!go_divProg %in% dataset_genes) / length(go_divProg)
+  go_intProg_missing_ratio[i] = sum(!go_intProg %in% dataset_genes) / length(go_intProg)
+  go_glut_missing_ratio[i] = sum(!go_glut %in% dataset_genes) / length(go_glut)
+  go_gaba_missing_ratio[i] = sum(!go_gaba %in% dataset_genes) / length(go_gaba)
+  go_nonN_missing_ratio[i] = sum(!go_nonN %in% dataset_genes) / length(go_nonN)
+  go_micro_missing_ratio[i] = sum(!go_micro %in% dataset_genes) / length(go_micro)
+  
+  #The marker genes in GO that are also in this dataset
+  check_nProg = go_nProg[go_nProg %in% dataset_genes]
+  check_intProg = go_intProg[go_intProg %in% dataset_genes]
+  check_divProg = go_divProg[go_divProg %in% dataset_genes]
+  check_glut = go_glut[go_glut %in% dataset_genes]
+  check_gaba = go_gaba[go_gaba %in% dataset_genes]
+  check_nonN = go_nonN[go_nonN %in% dataset_genes]
+  check_micro = go_micro[go_micro %in% dataset_genes]
+  
+  #dataset counts for the genes in each marker set
+  dataset_nProg = colSums(FetchData(current_dataset, vars = check_nProg, slot = 'counts'))
+  dataset_divProg = colSums(FetchData(current_dataset, vars = check_divProg, slot = 'counts'))
+  dataset_intProg = colSums(FetchData(current_dataset, vars = check_intProg, slot = 'counts'))
+  dataset_glut = colSums(FetchData(current_dataset, vars = check_glut, slot = 'counts'))
+  dataset_gaba = colSums(FetchData(current_dataset, vars = check_gaba, slot = 'counts'))
+  dataset_nonN = colSums(FetchData(current_dataset, vars = check_nonN, slot = 'counts'))
+  dataset_micro = colSums(FetchData(current_dataset, vars = check_micro, slot = 'counts'))
+  
+  #Ratio of marker genes present with 0 expression in dataset
+  go_nProg_no_exp_ratio[i] = sum(dataset_nProg == 0) / length(check_nProg)
+  go_divProg_no_exp_ratio[i] =sum(dataset_divProg == 0) / length(check_divProg)
+  go_intProg_no_exp_ratio[i] =sum(dataset_intProg == 0) / length(check_intProg)
+  go_glut_no_exp_ratio[i] =sum(dataset_glut == 0) / length(check_glut)
+  go_gaba_no_exp_ratio[i] =sum(dataset_gaba == 0) / length(check_gaba)
+  go_nonN_no_exp_ratio[i] =sum(dataset_nonN == 0) / length(check_nonN)
+  go_micro_no_exp_ratio[i] =sum(dataset_micro == 0) / length(check_micro)
+  #Mean number of counts across all cells for the marker set
+  go_nProg_mean_counts[i] = mean(dataset_nProg)
+  go_divProg_mean_counts[i] = mean(dataset_divProg)
+  go_intProg_mean_counts[i] = mean(dataset_intProg)
+  go_glut_mean_counts[i] = mean(dataset_glut)
+  go_gaba_mean_counts[i] = mean(dataset_gaba)
+  go_nonN_mean_counts[i] = mean(dataset_nonN)
+  go_micro_mean_counts[i] = mean(dataset_micro)
+  #Median number of counts across all cells for the marker set
+  go_nProg_median_counts[i] = median(dataset_nProg)
+  go_divProg_median_counts[i] =median(dataset_divProg)
+  go_intProg_median_counts[i] =median(dataset_intProg)
+  go_glut_median_counts[i] =median(dataset_glut)
+  go_gaba_median_counts[i] =median(dataset_gaba)
+  go_nonN_median_counts[i] =median(dataset_nonN)
+  go_micro_median_counts[i] =median(dataset_micro)
+
+  print(i)
+}
+
+
+```
+Add it all to the metadata dataframe
+
+```{r}
+
+all_sample_meta$go_nProg_missing_ratio = go_nProg_missing_ratio
+all_sample_meta$go_nProg_no_exp_ratio = go_nProg_no_exp_ratio
+all_sample_meta$go_nProg_mean_counts = go_nProg_mean_counts
+all_sample_meta$go_nProg_median_counts = go_nProg_median_counts
+
+all_sample_meta$go_divProg_missing_ratio = go_divProg_missing_ratio
+all_sample_meta$go_divProg_no_exp_ratio = go_divProg_no_exp_ratio
+all_sample_meta$go_divProg_mean_counts = go_divProg_mean_counts
+all_sample_meta$go_divProg_median_counts = go_divProg_median_counts
+
+all_sample_meta$go_intProg_missing_ratio = go_intProg_missing_ratio
+all_sample_meta$go_intProg_no_exp_ratio = go_intProg_no_exp_ratio
+all_sample_meta$go_intProg_mean_counts = go_intProg_mean_counts
+all_sample_meta$go_intProg_median_counts = go_intProg_median_counts
+
+all_sample_meta$go_glut_missing_ratio = go_glut_missing_ratio
+all_sample_meta$go_glut_no_exp_ratio = go_glut_no_exp_ratio
+all_sample_meta$go_glut_mean_counts = go_glut_mean_counts
+all_sample_meta$go_glut_median_counts = go_glut_median_counts
+
+all_sample_meta$go_gaba_missing_ratio = go_gaba_missing_ratio
+all_sample_meta$go_gaba_no_exp_ratio = go_gaba_no_exp_ratio
+all_sample_meta$go_gaba_mean_counts = go_gaba_mean_counts
+all_sample_meta$go_gaba_median_counts = go_gaba_median_counts
+
+all_sample_meta$go_nonN_missing_ratio = go_nonN_missing_ratio
+all_sample_meta$go_nonN_no_exp_ratio = go_nonN_no_exp_ratio
+all_sample_meta$go_nonN_mean_counts = go_nonN_mean_counts
+all_sample_meta$go_nonN_median_counts = go_nonN_median_counts
+
+all_sample_meta$go_micro_missing_ratio = go_micro_missing_ratio
+all_sample_meta$go_micro_no_exp_ratio = go_micro_no_exp_ratio
+all_sample_meta$go_micro_mean_counts = go_micro_mean_counts
+all_sample_meta$go_micro_median_counts = go_micro_median_counts
+```
+
+
+total counts, features, and mitochondrial percentages
+```{r}
+par(pty = 's')
+
+all_sample_meta
+plot(all_sample_meta$mean_count, all_sample_meta$nProg_cons_coexp_metric)
+plot(all_sample_meta$median_count, all_sample_meta$nProg_cons_coexp_metric)
+plot(all_sample_meta$mean_feature, all_sample_meta$nProg_cons_coexp_metric)
+plot(all_sample_meta$median_feature, all_sample_meta$nProg_cons_coexp_metric)
+plot(all_sample_meta$mean_mito, all_sample_meta$nProg_cons_coexp_metric)
+plot(all_sample_meta$median_mito, all_sample_meta$nProg_cons_coexp_metric)
+
+
+plot(all_sample_meta$mean_count, all_sample_meta$dividing_cons_coexp_metric)
+plot(all_sample_meta$mean_feature, all_sample_meta$dividing_cons_coexp_metric)
+plot(all_sample_meta$mean_mito, all_sample_meta$dividing_cons_coexp_metric)
+plot(all_sample_meta$median_count, all_sample_meta$dividing_cons_coexp_metric)
+plot(all_sample_meta$median_feature, all_sample_meta$dividing_cons_coexp_metric)
+plot(all_sample_meta$median_mito, all_sample_meta$dividing_cons_coexp_metric)
+
+plot(all_sample_meta$mean_count, all_sample_meta$glut_cons_coexp_metric)
+plot(all_sample_meta$mean_feature, all_sample_meta$glut_cons_coexp_metric)
+plot(all_sample_meta$mean_mito, all_sample_meta$glut_cons_coexp_metric)
+plot(all_sample_meta$median_count, all_sample_meta$glut_cons_coexp_metric)
+plot(all_sample_meta$median_feature, all_sample_meta$glut_cons_coexp_metric)
+plot(all_sample_meta$median_mito, all_sample_meta$glut_cons_coexp_metric)
+
+plot(all_sample_meta$mean_count, all_sample_meta$gaba_cons_coexp_metric)
+plot(all_sample_meta$mean_feature, all_sample_meta$gaba_cons_coexp_metric)
+plot(all_sample_meta$mean_mito, all_sample_meta$gaba_cons_coexp_metric)
+plot(all_sample_meta$median_count, all_sample_meta$gaba_cons_coexp_metric)
+plot(all_sample_meta$median_feature, all_sample_meta$gaba_cons_coexp_metric)
+plot(all_sample_meta$median_mito, all_sample_meta$gaba_cons_coexp_metric)
+
+plot(all_sample_meta$mean_count, all_sample_meta$nonN_cons_coexp_metric)
+plot(all_sample_meta$mean_feature, all_sample_meta$nonN_cons_coexp_metric)
+plot(all_sample_meta$mean_mito, all_sample_meta$nonN_cons_coexp_metric)
+plot(all_sample_meta$median_count, all_sample_meta$nonN_cons_coexp_metric)
+plot(all_sample_meta$median_feature, all_sample_meta$nonN_cons_coexp_metric)
+plot(all_sample_meta$median_mito, all_sample_meta$nonN_cons_coexp_metric)
+```
+
+ratio of missing markers from each dataset
+save plots of these
+
+```{r}
+
+cor_permute = function(x,y, method_cor){
+  permute_y = sample(y,size=length(y), replace=FALSE)
+  corr = suppressWarnings(cor(x,permute_y, method=method_cor))
+  return(corr)
+}
+
+num_permutes = 10000
+
+```
+
+
+
+```{r}
+print('Preserved coexp nProg')
+original_cor = cor(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('Preserved coexp divProg')
+original_cor = cor(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('Preserved coexp intProg')
+original_cor = cor(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('Preserved coexp glut')
+original_cor = cor(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval =(sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('Preserved coexp gaba')
+original_cor = cor(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('Preserved coexp nonN')
+original_cor = cor(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('Preserved coexp micro')
+original_cor = cor(all_sample_meta$go_micro_missing_ratio, all_sample_meta$micro_cons_coexp_metric, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_micro_missing_ratio, all_sample_meta$micro_cons_coexp_metric, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+
+
+print('EGAD nProg')
+original_cor = cor(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('EGAD divProg')
+original_cor = cor(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+pval
+print('EGAD intProg')
+original_cor = cor(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('EGAD glut')
+original_cor = cor(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+pval
+print('EGAD gaba')
+original_cor = cor(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('EGAD nonN')
+original_cor = cor(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+print('EGAD micro')
+original_cor = cor(all_sample_meta$go_micro_missing_ratio, all_sample_meta$egad_auc_micro_markers, method = 'spearman')
+original_cor
+original_cor**2
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_micro_missing_ratio, all_sample_meta$egad_auc_micro_markers, 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+pval
+
+
+```
+
+
+
+
+
+
+```{r}
+#Conserved coexp score
+#Marker set specific ratios of padded zeros
+par(pty = 's')
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nProg_GO_zeroPadded_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric, main = 'Neural prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_intProg_GO_zeroPadded_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric, main = 'Intermediate prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_divProg_GO_zeroPadded_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric, main = 'Dividing prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_glut_GO_zeroPadded_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric, main = 'Glutamatergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_gaba_GO_zeroPadded_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric, main = 'GABAergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nonN_GO_zeroPadded_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric, main = 'Non-neuronal', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+dev.off()
+
+
+
+#EGAD auroc
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nProg_GO_zeroPadded_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers, main = 'Neural prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_intProg_GO_zeroPadded_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers, main = 'Intermediate prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_divProg_GO_zeroPadded_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers, main = 'Dividing prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_glut_GO_zeroPadded_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers, main = 'Glutamatergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_gaba_GO_zeroPadded_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers, main = 'GABAergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nonN_GO_zeroPadded_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers, main = 'Non-neuronal', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+```
+
+
+
+Mean counts for the marker set
+```{r}
+#Marker set specific ratios of padded zeros
+par(pty = 's')
+plot(log10(all_sample_meta$median_count), all_sample_meta$nProg_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$intProg_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$dividing_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$glut_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$gaba_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$nonN_cons_coexp_metric)
+
+print('preserved co-expresserion and mean counts per cell R2...')
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+original_cor ** 2
+
+
+print('EGAD and mean counts per cell R2...')
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$egad_auc_nProg_markers, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$egad_auc_divProg_markers, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$egad_auc_intProg_markers, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$egad_auc_glut_markers, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$egad_auc_gaba_markers, method = 'spearman')
+original_cor ** 2
+original_cor = cor(all_sample_meta$median_count, all_sample_meta$egad_auc_nonN_markers, method = 'spearman')
+original_cor ** 2
+
+```
+
+Median counts for the marker set
+```{r}
+#Marker set specific ratios of padded zeros
+par(pty = 's')
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nProg_median_counts_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_nProg_median_counts), all_sample_meta$nProg_cons_coexp_metric, main = 'Neural prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_intProg_median_counts_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_intProg_median_counts), all_sample_meta$intProg_cons_coexp_metric, main = 'Intermediate prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_divProg_median_counts_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_divProg_median_counts), all_sample_meta$dividing_cons_coexp_metric, main = 'Dividing prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_glut_median_counts_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_glut_median_counts), all_sample_meta$glut_cons_coexp_metric, main = 'Glutamatergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_gaba_median_counts_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_gaba_median_counts), all_sample_meta$gaba_cons_coexp_metric, main = 'GABAergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nonN_median_counts_scatter_consCoexp.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_nonN_median_counts), all_sample_meta$nonN_cons_coexp_metric, main = 'Non-neuronal', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+dev.off()
+
+
+
+
+
+#EGAD auroc
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nProg_median_counts_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_nProg_median_counts), all_sample_meta$egad_auc_nProg_markers, main = 'Neural prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_intProg_median_counts_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_intProg_median_counts), all_sample_meta$egad_auc_intProg_markers, main = 'Intermediate prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_divProg_median_counts_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_divProg_median_counts), all_sample_meta$egad_auc_divProg_markers, main = 'Dividing prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_glut_median_counts_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_glut_median_counts), all_sample_meta$egad_auc_glut_markers, main = 'Glutamatergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_gaba_median_counts_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_gaba_median_counts), all_sample_meta$egad_auc_gaba_markers, main = 'GABAergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/org_nonN_median_counts_scatter_EGAD.pdf', useDingbats = F, height = 4, width = 4)
+plot(log10(all_sample_meta$go_nonN_median_counts), all_sample_meta$egad_auc_nonN_markers, main = 'Non-neuronal', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+dev.off()
+
+print('Preserved co-expression and median expression gene set correlations nProg')
+original_cor = cor(all_sample_meta$go_nProg_median_counts, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nProg_median_counts, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and median expression gene set correlations divProg')
+original_cor = cor(all_sample_meta$go_divProg_median_counts, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_divProg_median_counts, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+original_cor
+pval
+print('Preserved co-expression and median expression gene set correlations intProg')
+original_cor = cor(all_sample_meta$go_intProg_median_counts, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_intProg_median_counts, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+original_cor
+pval
+print('Preserved co-expression and median expression gene set correlations glut')
+original_cor = cor(all_sample_meta$go_glut_median_counts, all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_glut_median_counts, all_sample_meta$glut_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+original_cor
+pval
+print('Preserved co-expression and median expression gene set correlations gaba')
+original_cor = cor(all_sample_meta$go_gaba_median_counts, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_gaba_median_counts, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and median expression gene set correlations nonN')
+original_cor = cor(all_sample_meta$go_nonN_median_counts, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nonN_median_counts, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+original_cor
+pval
+
+
+print('EGAD and median expression gene set correlations nProg')
+original_cor = cor(all_sample_meta$go_nProg_median_counts, all_sample_meta$egad_auc_nProg_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nProg_median_counts, all_sample_meta$egad_auc_nProg_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+original_cor
+pval
+print('EGAD and median expression gene set correlations divProg')
+original_cor = cor(all_sample_meta$go_divProg_median_counts, all_sample_meta$egad_auc_divProg_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_divProg_median_counts, all_sample_meta$egad_auc_divProg_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and median expression gene set correlations intProg')
+original_cor = cor(all_sample_meta$go_intProg_median_counts, all_sample_meta$egad_auc_intProg_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_intProg_median_counts, all_sample_meta$egad_auc_intProg_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and median expression gene set correlations glut')
+original_cor = cor(all_sample_meta$go_glut_median_counts, all_sample_meta$egad_auc_glut_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_glut_median_counts, all_sample_meta$egad_auc_glut_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and median expression gene set correlations gaba')
+original_cor = cor(all_sample_meta$go_gaba_median_counts, all_sample_meta$egad_auc_gaba_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_gaba_median_counts, all_sample_meta$egad_auc_gaba_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and median expression gene set correlations nonN')
+original_cor = cor(all_sample_meta$go_nonN_median_counts, all_sample_meta$egad_auc_nonN_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$go_nonN_median_counts, all_sample_meta$egad_auc_nonN_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+
+```
+
+
+
+cell number
+
+```{r}
+print('Preserved co-expression and cell number correlations nProg')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and cell number correlations divProg')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and cell number correlations intProg')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and cell number correlations glut')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$glut_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and cell number correlations gaba')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval =(sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('Preserved co-expression and cell number correlations nonN')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+
+
+print('EGAD and cell number correlations nProg')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_nProg_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_nProg_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and cell number correlations divProg')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_divProg_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_divProg_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and cell number correlations intProg')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_intProg_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_intProg_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1)/ num_permutes
+original_cor
+pval
+print('EGAD and cell number correlations glut')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_glut_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_glut_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and cell number correlations gaba')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_gaba_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_gaba_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+print('EGAD and cell number correlations nonN')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_nonN_markers, method = 'spearman')
+permute_corrs = unlist(mclapply(1:num_permutes, function(i) cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$egad_auc_nonN_markers, method = 'spearman'), mc.cores = 5))
+pval = (sum(abs(permute_corrs) >= abs(original_cor))+1) / num_permutes
+original_cor
+pval
+
+```
+
+
+correlation of the conserved coexpression scores 
+
+
+```{r}
+
+cons_coexp_meta = all_sample_meta[ , c('nProg_cons_coexp_metric','dividing_cons_coexp_metric','intProg_cons_coexp_metric',
+                                       'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric', 'micro_cons_coexp_metric')]
+
+
+cor_cons_coexp_metrix = cor(cons_coexp_meta, method = 'spearman')
+
+pdf(file = 'graphs/coexpression/conserved_coexpression/cons_coexp_corr_matrix_with_microv5.pdf', useDingbats = F, height = 6, width = 6)
+
+col_fun = colorRamp2(c( 0, 1), c("white", "red"))
+Heatmap(cor_cons_coexp_metrix, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+dev.off()
+
+Heatmap(cor_cons_coexp_metrix, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+
+
+
+cons_coexp_meta = all_sample_meta[ , c('nProg_cons_coexp_metric','dividing_cons_coexp_metric','intProg_cons_coexp_metric',
+                                       'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric')]
+
+
+cor_cons_coexp_metrix = cor(cons_coexp_meta, method = 'spearman')
+min(cor_cons_coexp_metrix)
+max(cor_cons_coexp_metrix[cor_cons_coexp_metrix !=1])
+
+pdf(file = 'graphs/coexpression/conserved_coexpression/cons_coexp_corr_matrix_v5.pdf', useDingbats = F, height = 6, width = 6)
+
+col_fun = colorRamp2(c( 0, 1), c("white", "red"))
+Heatmap(cor_cons_coexp_metrix, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+dev.off()
+
+Heatmap(cor_cons_coexp_metrix, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+
+
+#Get p-values for all the correlations
+p_val_mat = matrix(NA, ncol = ncol(cor_cons_coexp_metrix), nrow = nrow(cor_cons_coexp_metrix), dimnames = list(rownames(cor_cons_coexp_metrix), colnames(cor_cons_coexp_metrix)))
+for(i in 1:nrow(p_val_mat)){
+  for(j in 1:ncol(p_val_mat)){
+    original_corr = cor(cons_coexp_meta[ ,i], cons_coexp_meta[ ,j], method = 'spearman')
+    original_corr
+    permute_corrs = unlist(mclapply(1:num_permutes, function(k) cor_permute(cons_coexp_meta[ ,i], cons_coexp_meta[ ,j], method = 'spearman'), mc.cores = 5))
+    p_val_mat[i,j] = (sum(abs(permute_corrs) >= abs(original_corr))+1) / num_permutes
+  
+  }
+}
+
+p_val_mat_adj = matrix(p.adjust(p_val_mat, method = 'BH'), ncol = 6, nrow = 6, dimnames = list(rownames(cor_cons_coexp_metrix), colnames(cor_cons_coexp_metrix)))
+p_val_mat_adj
+
+```
+
+
+
+
+
+
+
+check the conservation coexppression score against the sparsity of each dataset's coexpression matrix. How many 0's do I inject to the network when getting them all in the GO gene universe?
+
+```{r}
+
+cor_permute = function(x,y, method_cor){
+  permute_y = sample(y,size=length(y), replace=FALSE)
+  corr = suppressWarnings(cor(x,permute_y, method=method_cor))
+  return(corr)
+}
+
+num_permutes = 10000
+
+```
+
+
+
+```{r}
+
+#Marker set specific ratios of padded zeros
+par(pty = 's')
+plot(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric)
+plot(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric)
+plot(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric)
+plot(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric)
+plot(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric)
+plot(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric)
+
+
+original_cor = cor(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1) / num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric, 'spearman'), mc.cores=5))
+p_val =(sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1) / num_permutes
+original_cor
+p_val
+
+
+
+```
+
+
+```{r}
+#Marker set specific ratios of padded zeros
+par(pty = 's')
+plot(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers)
+plot(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers)
+plot(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers)
+plot(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers)
+plot(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers)
+plot(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers)
+
+original_cor = cor(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers, 'spearman'), mc.cores=5))
+p_val =(sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1) / num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers, 'spearman'), mc.cores=5))
+p_val =(sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+original_cor = cor(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+```
+
+
+
+
+
+
+
+
+EGAD AUC, correlation with technical features
+```{r}
+
+all_sample_meta_subset = all_sample_meta[ ,c('post_qc_cell_number','egad_auc_nProg_markers','egad_auc_intProg_markers', 'egad_auc_divProg_markers',
+                                             'egad_auc_glut_markers','egad_auc_gaba_markers','egad_auc_nonN_markers',
+                                             'mean_feature','mean_mito','median_feature','median_mito',
+                                             'go_nProg_missing_ratio','go_intProg_missing_ratio','go_divProg_missing_ratio',
+                                             'go_glut_missing_ratio','go_gaba_missing_ratio','go_nonN_missing_ratio')] 
+all_sample_meta_subset$post_qc_cell_number = as.numeric(all_sample_meta_subset$post_qc_cell_number)
+corr_matrix_dataset_features = cor(all_sample_meta_subset, method = 'spearman')
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/egad_and_tech_features_corr_matrix_v5.pdf', 
+   useDingbats = F, height = 7, width = 9)
+Heatmap(corr_matrix_dataset_features, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2')
+
+dev.off()
+
+Heatmap(corr_matrix_dataset_features, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2')
+```
+
+
+
+
+Conservation of coexpression AUC, correlation with technical features
+```{r}
+
+all_sample_meta_subset = all_sample_meta[ ,c('post_qc_cell_number','dividing_cons_coexp_metric','intProg_cons_coexp_metric', 'nProg_cons_coexp_metric',
+                                             'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric',
+                                             'mean_feature','mean_mito','median_feature','median_mito',
+                                             'go_nProg_missing_ratio','go_intProg_missing_ratio','go_divProg_missing_ratio',
+                                             'go_glut_missing_ratio','go_gaba_missing_ratio','go_nonN_missing_ratio')] 
+all_sample_meta_subset$post_qc_cell_number = as.numeric(all_sample_meta_subset$post_qc_cell_number)
+
+
+corr_matrix_dataset_features = cor(all_sample_meta_subset, method = 'spearman')
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/consCoexp_and_tech_features_corr_matrix_v5.pdf', 
+    useDingbats = F, height = 7, width = 9)
+Heatmap(corr_matrix_dataset_features, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2')
+dev.off()
+
+Heatmap(corr_matrix_dataset_features, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2')
+```
+
+number of cells is moderately correlated
+```{r}
+
+all_sample_meta$post_qc_cell_number= as.numeric(all_sample_meta$post_qc_cell_number)
+par(pty = 's')
+plot(log10(all_sample_meta$post_qc_cell_number), all_sample_meta$nProg_cons_coexp_metric)
+plot(log10(all_sample_meta$post_qc_cell_number), all_sample_meta$dividing_cons_coexp_metric)
+plot(log10(all_sample_meta$post_qc_cell_number), all_sample_meta$intProg_cons_coexp_metric)
+plot(log10(all_sample_meta$post_qc_cell_number), all_sample_meta$glut_cons_coexp_metric)
+plot(log10(all_sample_meta$post_qc_cell_number), all_sample_meta$gaba_cons_coexp_metric)
+plot(log10(all_sample_meta$post_qc_cell_number), all_sample_meta$nonN_cons_coexp_metric)
+
+cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+
+```
+
+feature counts and umi counts
+
+
+```{r}
+
+par(pty = 's')
+plot(log10(all_sample_meta$median_count), all_sample_meta$nProg_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$dividing_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$intProg_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$glut_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$gaba_cons_coexp_metric)
+plot(log10(all_sample_meta$median_count), all_sample_meta$nonN_cons_coexp_metric)
+
+cor(as.numeric(all_sample_meta$median_count), all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_count), all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_count), all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_count), all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_count), all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_count), all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+
+```
+```{r}
+
+par(pty = 's')
+plot(log10(all_sample_meta$median_feature), all_sample_meta$nProg_cons_coexp_metric)
+plot(log10(all_sample_meta$median_feature), all_sample_meta$dividing_cons_coexp_metric)
+plot(log10(all_sample_meta$median_feature), all_sample_meta$intProg_cons_coexp_metric)
+plot(log10(all_sample_meta$median_feature), all_sample_meta$glut_cons_coexp_metric)
+plot(log10(all_sample_meta$median_feature), all_sample_meta$gaba_cons_coexp_metric)
+plot(log10(all_sample_meta$median_feature), all_sample_meta$nonN_cons_coexp_metric)
+
+cor(as.numeric(all_sample_meta$median_feature), all_sample_meta$nProg_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_feature), all_sample_meta$dividing_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_feature), all_sample_meta$intProg_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_feature), all_sample_meta$glut_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_feature), all_sample_meta$gaba_cons_coexp_metric, method = 'spearman')
+cor(as.numeric(all_sample_meta$median_feature), all_sample_meta$nonN_cons_coexp_metric, method = 'spearman')
+
+```
+
+
+
+
+save the metadata with these features
+
+```{r}
+
+write.csv(all_sample_meta, file = '../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv', row.names = F)
+```
+
+
+
+```{r}
+
+all_sample_meta = read.csv( '../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+
+```
+Compare the normal to treated organoids
+```{r}
+
+all_sample_meta$treatment = all_sample_meta$Condition
+all_sample_meta$treatment[all_sample_meta$Condition != 'Normal'] = 'Treated'
+table(all_sample_meta$treatment)
+```
+
+
+
+
+compare coexpression results between the normal and mutant organoids
+
+
+```{r}
+all_sample_meta_subset = all_sample_meta[ ,c('dividing_cons_coexp_metric','intProg_cons_coexp_metric', 'nProg_cons_coexp_metric',
+                                             'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric', 'treatment')] 
+all_sample_meta_subset = reshape2::melt(all_sample_meta_subset)
+order_names = filter(all_sample_meta_subset, treatment == 'Normal') %>% group_by(variable) %>% summarize(median = median(value)) %>% arrange(desc(median))
+order_names = as.character(order_names$variable)
+all_sample_meta_subset$variable = factor(all_sample_meta_subset$variable, levels = order_names)
+ggplot(all_sample_meta_subset, aes(x = variable, y = value, fill = treatment )) + geom_boxplot() +
+  ylab('Conserved Co-expression scores') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) 
+ggsave(filename = 'normal_vs_treated_org_consCoexpScores_boxplots_v5.pdf', path = 'graphs/coexpression/', device = 'pdf', useDingbats = F,
+       height = 4, width = 8)
+
+consCoexp_pvalue_vec = vector(mode = 'numeric', length = 6)
+names(consCoexp_pvalue_vec) = c('dividing_cons_coexp_metric','intProg_cons_coexp_metric', 'nProg_cons_coexp_metric',
+                                             'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric')
+nProg_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'nProg_cons_coexp_metric')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'nProg_cons_coexp_metric')$value, alternative = 'two.sided')
+consCoexp_pvalue_vec['nProg_cons_coexp_metric'] = nProg_test$p.value
+dividing_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'dividing_cons_coexp_metric')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'dividing_cons_coexp_metric')$value, alternative = 'two.sided')
+consCoexp_pvalue_vec['dividing_cons_coexp_metric'] = dividing_test$p.value
+intProg_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'intProg_cons_coexp_metric')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'intProg_cons_coexp_metric')$value, alternative = 'two.sided')
+consCoexp_pvalue_vec['intProg_cons_coexp_metric'] = intProg_test$p.value
+glut_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'glut_cons_coexp_metric')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'glut_cons_coexp_metric')$value, alternative = 'two.sided')
+consCoexp_pvalue_vec['glut_cons_coexp_metric'] = glut_test$p.value
+gaba_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'gaba_cons_coexp_metric')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'gaba_cons_coexp_metric')$value, alternative = 'two.sided')
+consCoexp_pvalue_vec['gaba_cons_coexp_metric'] = gaba_test$p.value
+nonN_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'nonN_cons_coexp_metric')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'nonN_cons_coexp_metric')$value, alternative = 'two.sided')
+consCoexp_pvalue_vec['nonN_cons_coexp_metric'] = nonN_test$p.value
+
+consCoexp_pvalue_vec = p.adjust(consCoexp_pvalue_vec, method = 'BH')
+
+
+
+
+all_sample_meta_subset = all_sample_meta[ ,c('egad_auc_nProg_markers','egad_auc_intProg_markers', 'egad_auc_divProg_markers',
+                                             'egad_auc_glut_markers','egad_auc_gaba_markers','egad_auc_nonN_markers', 'treatment')] 
+all_sample_meta_subset = reshape2::melt(all_sample_meta_subset)
+order_names = filter(all_sample_meta_subset, treatment == 'Normal') %>% group_by(variable) %>% summarize(median = median(value)) %>% arrange(desc(median))
+order_names = as.character(order_names$variable)
+all_sample_meta_subset$variable = factor(all_sample_meta_subset$variable, levels = order_names)
+ggplot(all_sample_meta_subset, aes(x = variable, y = value, fill = treatment )) + geom_boxplot() +
+  ylab('EGAD AUROCs') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+ggsave(filename = 'normal_vs_treated_org_EGAD_boxplots_v5.pdf', path = 'graphs/coexpression/', device = 'pdf', useDingbats = F,
+       height = 4, width = 8)
+
+egad_pvalue_vec = vector(mode = 'numeric', length = 6)
+names(egad_pvalue_vec) = c('egad_auc_nProg_markers','egad_auc_intProg_markers', 'egad_auc_divProg_markers',
+                                             'egad_auc_glut_markers','egad_auc_gaba_markers','egad_auc_nonN_markers')
+
+nProg_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'egad_auc_nProg_markers')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'egad_auc_nProg_markers')$value, alternative = 'two.sided')
+egad_pvalue_vec['egad_auc_nProg_markers'] = nProg_test$p.value
+divProg_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'egad_auc_divProg_markers')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'egad_auc_divProg_markers')$value, alternative = 'two.sided')
+egad_pvalue_vec['egad_auc_divProg_markers'] = divProg_test$p.value
+intProg_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'egad_auc_intProg_markers')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'egad_auc_intProg_markers')$value, alternative = 'two.sided')
+egad_pvalue_vec['egad_auc_intProg_markers'] = intProg_test$p.value
+glut_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'egad_auc_glut_markers')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'egad_auc_glut_markers')$value, alternative = 'two.sided')
+egad_pvalue_vec['egad_auc_glut_markers'] = glut_test$p.value
+gaba_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'egad_auc_gaba_markers')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'egad_auc_gaba_markers')$value, alternative = 'two.sided')
+egad_pvalue_vec['egad_auc_gaba_markers'] = gaba_test$p.value
+nonN_test = wilcox.test(filter(all_sample_meta_subset, treatment == 'Normal' & variable == 'egad_auc_nonN_markers')$value,
+            filter(all_sample_meta_subset, treatment == 'Treated' & variable == 'egad_auc_nonN_markers')$value, alternative = 'two.sided')
+egad_pvalue_vec['egad_auc_nonN_markers'] = nonN_test$p.value
+
+egad_pvalue_vec = p.adjust(egad_pvalue_vec, method = 'BH')
+
+
+consCoexp_pvalue_vec
+egad_pvalue_vec
+
+```
+
+
+
+
+add a dataset column and get the variance in the RG conserved coexp scores
+
+```{r}
+
+
+
+all_sample_meta %>% group_by(Study) %>% summarize(nProg_coexp_var = max(nProg_cons_coexp_metric) - min(nProg_cons_coexp_metric)) %>% arrange(desc(nProg_coexp_var))
+
+```
+
+
+
+
+
+##########################################################
+Transitioning to looking at the conserved coexpression across all genes, not just the marker genes
+
+######################################################
+
+
+Compare the mean conserved coexpression AUROC between fetal-organoid and fetal-unannotated-fetal
+
+```{r}
+#The conservation of coexpression
+top = 10
+
+fetal_org_all_cons_coexp = unlist(mclapply(1:length(go_genes), function(i) get_conserved_coexp(fetal_ranked_aggregate, organoid_ranked_aggregate, 
+                                                                                   go_genes[i], num_top = top ), mc.cores = 10 ))
+fetal_fetal_all_cons_coexp = unlist(mclapply(1:length(go_genes), function(i) get_conserved_coexp(fetal_ranked_aggregate, unannot_fetal_ranked_aggregate, 
+                                                                                   go_genes[i], num_top = top ), mc.cores = 10 ))
+
+fetal_org_mean = mean(fetal_org_all_cons_coexp)
+fetal_org_sd = sd(fetal_org_all_cons_coexp)
+
+fetal_fetal_mean = mean(fetal_fetal_all_cons_coexp)
+fetal_fetal_sd = sd(fetal_fetal_all_cons_coexp)
+
+mean_consCoexp_df = data.frame(label = c('Fetal - Fetal','Fetal - Organoid'), mean = c(fetal_fetal_mean, fetal_org_mean), sd = c(fetal_fetal_sd, fetal_org_sd))
+mean_consCoexp_df
+
+
+u_test = wilcox.test(fetal_org_all_cons_coexp, fetal_fetal_all_cons_coexp, alternative = 'two.sided')
+u_test
+
+ggplot(mean_consCoexp_df, aes(x = label, y = mean)) + geom_point(size = 3) + ylim(.5,1.2) + ylab('Mean conserved co-expression AUROC') +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, position=position_dodge(0.05)) +
+  annotate(geom = 'text', label = 'p-value < 2.2e-16', x = 'Fetal - Organoid', y = 1.2)
+ggsave(filename = 'mean_consCoexpScore_dot_plot_v4.pdf', path = 'graphs/coexpression/conserved_coexpression/', useDingbats = F, device = 'pdf', height = 4, width = 4)
+
+
+conserved_coexp_df = data.frame(genes = go_genes, fetal_organoid = fetal_org_all_cons_coexp)
+conserved_coexp_df
+
+```
+
+
+
+Mapping of GO terms to their descriptions
+```{r}
+library(GO.db)
+GO_descriptions = as.list(GOTERM)
+#Example for how to get the description
+Term(GO_descriptions[['GO:0000001']])
+Term(GO_descriptions[[1]])
+
+
+Term(GO_descriptions[[go_terms[5]]])
+
+```
+
+Get the average conserved coexpression score for all the GO terms
+Can then look at the top and bottom scoring GO terms
+Rather than look for enrichments of the top or bottom filtered coexpressed genes
+```{r}
+
+
+
+get_go_description = function(go_term){
+  if(is.null(GO_descriptions[[go_term]])){return(NA)}
+  return(Term(GO_descriptions[[go_term]]))
+}
+
+get_go_set_genes = function(go_term, go_table){
+  if(is.null(GO_descriptions[[go_term]])){return(NA)}
+  return(unique(go_table$gene_symbol[go_table$go_id==go_term]))
+}
+
+get_go_set_num_genes = function(go_term, go_table){
+  if(is.null(GO_descriptions[[go_term]])){return(NA)}
+  return(length(unique(go_table$gene_symbol[go_table$go_id==go_term])))
+}
+
+get_go_set_cons_coexp = function(conserved_coexp_df, go_term_genes){
+  #if(is.na(go_term_genes)){return(NA)}
+  return(sum(filter(conserved_coexp_df, genes %in% go_term_genes )$fetal_organoid) / length(go_term_genes))
+}
+
+start = Sys.time()
+test_descriptions = sapply(1:length(go_terms), function(i) get_go_description(go_terms[i]))
+end = Sys.time()
+end - start
+
+start = Sys.time()
+test_go_nums = sapply(1:length(go_terms), function(i) get_go_set_num_genes(go_terms[i], go_table))
+end = Sys.time()
+end - start
+
+start = Sys.time()
+test_go_set_cons_coexp = sapply(1:length(go_terms), function(i) get_go_set_cons_coexp(conserved_coexp_df, get_go_set_genes(go_terms[i], go_table)))
+end = Sys.time()
+end - start
+
+
+go_conserved_coexp_df = data.frame(go_term = go_terms, description = test_descriptions, 
+           num_genes = test_go_nums , 
+           conserved_coexp_score = test_go_set_cons_coexp)
+
+
+go_conserved_coexp_df$conserved_coexp_score[is.na(go_conserved_coexp_df$description)] = NA
+
+
+```
+
+
+```{r}
+par(pty = 's')
+plot(go_conserved_coexp_df$num_genes, go_conserved_coexp_df$conserved_coexp_score)
+```
+
+
+```{r}
+
+save(go_conserved_coexp_df, file = '../data/coexpression/conserved_coexp_pval_df_v5.Rdata')
+```
+
+
+```{r}
+
+load( file = '../data/coexpression/conserved_coexp_pval_df_v5.Rdata')
+```
+
+
+Rather than a bootstrap approach, do it theoretically and compare
+Can use Standard error about the means to get a p-value for each gene set mean
+The true population distribution in this case is known, it is the distribution of conserved coexpression AUROCs across all genes
+We want a measure of significance for any sample mean
+
+
+SE = true_sd / sqrt(gene_set_size) gives the SE about the mean for a sample of size gene_set_size
+we then z-score the sample mean
+z_score = sample_mean - true_mean / SE  
+and get a pvalue for that zcore
+two.sided
+pvalue = 2*(1-pnorm(sample_mean, mean=true_mean, sd= SE)
+
+
+Compare against the bootstrapped p-values
+
+
+Standard error approach gives almost identical p-value results and takes a tenth of a second
+Just use this
+
+```{r}
+
+#Population mean and sd
+pop_mu = mean(conserved_coexp_df$fetal_organoid, na.rm = T)
+pop_sd = sd(conserved_coexp_df$fetal_organoid, na.rm = T)
+
+se_pval_vec_left = vector(mode = 'numeric', length = nrow(go_conserved_coexp_df))
+start = Sys.time()
+for(i in 1:nrow(go_conserved_coexp_df)){
+  
+  if(is.na(go_conserved_coexp_df$conserved_coexp_score[i])){se_pval_vec_left[i] = NA}
+  
+  sample_se = pop_sd / sqrt(go_conserved_coexp_df$num_genes[i])
+  sample_mean = go_conserved_coexp_df$conserved_coexp_score[i]
+  z_score = (sample_mean - pop_mu) / sample_se
+  se_pval_vec_left[i] = pnorm(z_score)
+  
+}
+
+se_pval_vec_right = 1 - se_pval_vec_left
+
+end = Sys.time()
+end - start
+
+hist(se_pval_vec_left, breaks = seq(0,1,.001))
+hist(se_pval_vec_right, breaks = seq(0,1,.001))
+```
+
+```{r}
+go_conserved_coexp_df
+
+```
+
+
+
+```{r}
+go_conserved_coexp_df$se_left_pval = p.adjust(se_pval_vec_left, method = 'BH')
+go_conserved_coexp_df$se_right_pval = p.adjust(se_pval_vec_right, method = 'BH')
+```
+
+```{r}
+
+go_conserved_coexp_df %>% filter(num_genes >=10 & num_genes <= 500) %>% arrange(se_left_pval)
+
+go_conserved_coexp_df %>% filter(num_genes >=20 & num_genes <= 250) %>% arrange(se_right_pval)
+
+```
+
+use rrvgo package to vizualize the results
+```{r}
+library(rrvgo)
+```
+
+
+
+```{r}
+
+test_df = go_conserved_coexp_df
+#Replace 0 pvalues with the minimum pvalue
+non_zero_smallest_p <- test_df %>% filter(se_right_pval != 0) %>% pull(se_right_pval) %>% min()
+test_df = test_df %>% mutate(se_right_pval = if_else(se_right_pval == 0, non_zero_smallest_p, se_right_pval))
+#Filter by gene set size and pvalue
+test_df = test_df %>% filter(num_genes >=20 & num_genes <= 250 & se_right_pval <= .0001)
+test_df %>% arrange(se_right_pval)
+#rrvgo functions, gets similarity between terms, then reduces into broader groups
+#ontology is BP CC or MF
+simMatrix <- calculateSimMatrix(test_df$go_term,
+                                orgdb="org.Hs.eg.db",
+                                ont="BP",
+                                method="Rel")
+
+scores <- setNames(-log10(test_df$se_right_pval), test_df$go_term)
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.9,
+                                orgdb="org.Hs.eg.db")
+
+
+treemapPlot(reducedTerms)
+right_sig_plot = scatterPlot(simMatrix, reducedTerms)
+right_sig_plot
+ggsave(right_sig_plot, filename = 'sig_fetal_conserved_GO_terms_in_organoids_scatter_v6.pdf', path = 'graphs/coexpression/conserved_coexpression/',
+       useDingbats = F, height = 6, width = 6, device = 'pdf')
+```
+
+```{r}
+
+table(reducedTerms$parentTerm)[order(table(reducedTerms$parentTerm))]
+barplot(table(reducedTerms$parentTerm)[order(table(reducedTerms$parentTerm))], las = 2, cex.names = .5)
+
+```
+
+
+```{r}
+
+test_df = go_conserved_coexp_df
+#Replace 0 pvalues with the minimum pvalue
+non_zero_smallest_p <- test_df %>% filter(se_left_pval != 0) %>% pull(se_left_pval) %>% min()
+test_df = test_df %>% mutate(se_left_pval = if_else(se_left_pval == 0, non_zero_smallest_p, se_left_pval))
+#Filter by gene set size and pvalue
+test_df = test_df %>% filter(num_genes >=20 & num_genes <= 250 & se_left_pval <= .0001)
+test_df %>% arrange(se_left_pval)
+#rrvgo functions, gets similarity between terms, then reduces into broader groups
+#ontology is BP CC or MF
+simMatrix <- calculateSimMatrix(test_df$go_term,
+                                orgdb="org.Hs.eg.db",
+                                ont="BP",
+                                method="Rel")
+
+scores <- setNames(-log10(test_df$se_left_pval), test_df$go_term)
+reducedTerms <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.9,
+                                orgdb="org.Hs.eg.db")
+
+treemapPlot(reducedTerms)
+left_sig_plot = scatterPlot(simMatrix, reducedTerms)
+left_sig_plot
+ggsave(left_sig_plot, filename = 'sig_fetal_Nonconserved_GO_terms_in_organoids_scatter_v6.pdf', path = 'graphs/coexpression/conserved_coexpression/',
+       useDingbats = F, height = 6, width = 6, device = 'pdf')
+
+
+```
+
+
+
+```{r}
+
+save(go_conserved_coexp_df, file = '../data/coexpression/conserved_coexp_pval_df_v5.Rdata')
+```
+
+
+
+```{r}
+
+load(file = '../data/coexpression/conserved_coexp_pval_df_v5.Rdata')
+
+
+```
+
+
+
+
+############################################
+
+Go through each organoid dataset and get the mean preserved co-expression across all genes
+
+#############################################
+
+
+```{r}
+cons_coexp_all_genes = vector(mode = 'numeric', length = nrow(all_sample_meta))
+
+for(j in 1:nrow(all_sample_meta)){
+  
+  start = Sys.time()
+  load(sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[j]))
+  
+  cons_coexp_all_genes[j] = mean(unlist(mclapply(1:length(go_genes), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, 
+                                                                                     go_genes[i], num_top = top ), mc.cores = 10 )))
+  
+  print(Sys.time() - start)
+  print(sprintf('Done with %i datasets...', j))
+
+}
+
+
+```
+
+
+
+```{r}
+
+all_sample_meta$genome_cons_coexp_score = cons_coexp_all_genes
+
+par(pty = 's')
+plot(all_sample_meta$median_feature, all_sample_meta$genome_cons_coexp_score, ylim = c(.5,1) )
+
+```
+
+
+
+
+save the metadata with these features
+
+```{r}
+
+write.csv(all_sample_meta, file = '../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv', row.names = F)
+```
+
+```{r}
+
+read.csv('../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+
+```
+
+
+```{r}
+
+all_sample_meta = read.csv('../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta
+```
+
+
+Plot and get the correlations between the genome wide preservation of co-expression scores and
+mitochondrial percentage, cell number, feature counts
+
+```{r}
+print('Global preserved co-expression and cell number...')
+original_cor = cor(all_sample_meta$post_qc_cell_number, all_sample_meta$genome_cons_coexp_score, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$post_qc_cell_number, all_sample_meta$genome_cons_coexp_score, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+par(pty = 's')
+plot(all_sample_meta$post_qc_cell_number, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Cell number', ylab = 'Global preserved co-expression score', main = sprintf('%1.4f pval: %1.5f', original_cor, p_val),
+     ylim = c(.5, 1))
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/global_presCoexp_cell_number_orgs.pdf', useDingbats = F, height = 4, width = 4)
+par(pty = 's')
+plot(all_sample_meta$post_qc_cell_number, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Cell number', ylab = 'Global preserved co-expression score', main = sprintf('%1.4f pval: %1.5f', original_cor, p_val),
+     ylim = c(.5, 1))
+dev.off()
+
+
+print('Global preserved co-expression and median mitochondrial...')
+original_cor = cor(all_sample_meta$median_mito, all_sample_meta$genome_cons_coexp_score, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$median_mito, all_sample_meta$genome_cons_coexp_score, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+par(pty = 's')
+plot(all_sample_meta$median_mito, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Median mitochondrial percentage', ylab = 'Global preserved co-expression score', main = sprintf('%1.4f pval: %1.5f', original_cor, p_val),
+     ylim = c(.5, 1))
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/global_presCoexp_medianMito_orgs.pdf', useDingbats = F, height = 4, width = 4)
+par(pty = 's')
+plot(all_sample_meta$median_mito, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Median mitochondrial percentage', ylab = 'Global preserved co-expression score', main = sprintf('%1.4f pval: %1.5f', original_cor, p_val),
+     ylim = c(.5, 1))
+dev.off()
+
+
+
+print('Global preserved co-expression and median features...')
+original_cor = cor(all_sample_meta$median_feature, all_sample_meta$genome_cons_coexp_score, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(all_sample_meta$median_feature, all_sample_meta$genome_cons_coexp_score, 'spearman'), mc.cores=5))
+p_val = (sum(abs(permute_cors) >= abs(original_cor) )+1)/ num_permutes
+original_cor
+p_val
+
+par(pty = 's')
+plot(all_sample_meta$median_feature, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Median genes detected', ylab = 'Global preserved co-expression score', main = sprintf('%1.4f pval: %1.5f', original_cor, p_val),
+     ylim = c(.5, 1))
+
+pdf(file = 'graphs/organoid_coexp_tech_variables/global_presCoexp_medianFeature_orgs.pdf', useDingbats = F, height = 4, width = 4)
+par(pty = 's')
+plot(all_sample_meta$median_feature, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Median genes detected', ylab = 'Global preserved co-expression score', main = sprintf('%1.4f pval: %1.5f', original_cor, p_val),
+     ylim = c(.5, 1))
+dev.off()
+
+
+```
+
+
+stacked barplot of the before and after cell counts
+
+```{r}
+
+temp_df = all_sample_meta[ , c('sample_ids','pre_qc_cell_number','post_qc_cell_number')]
+temp_df = temp_df %>% mutate(filt_percentage = 1 - (post_qc_cell_number / pre_qc_cell_number)) %>% arrange(filt_percentage)
+temp_df$sample_ids = factor(temp_df$sample_ids, levels = temp_df$sample_ids)
+ggplot(temp_df, aes(x = sample_ids, y = filt_percentage)) + geom_bar(stat="identity") + ylab('Percentage of filtered cells') +
+  xlab('Organoid datasets') +
+  theme(axis.text.x=element_blank(),axis.ticks.x=element_blank())
+ggsave(filename = 'org_percent_filtered_v2.pdf', path = 'graphs/organoid_coexp_tech_variables/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+ggplot(temp_df, aes(x = sample_ids, y = log10(post_qc_cell_number))) + geom_bar(stat="identity") + ylab('log10( Number of cells post QC filtering )') +
+  theme(axis.text.x=element_blank(),axis.ticks.x=element_blank()) +
+  xlab('Organoid datasets')
+ggsave(filename = 'org_post_cell_number_v2.pdf', path = 'graphs/organoid_coexp_tech_variables/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+```
+
+
+Check over the different normalizations too
+```{r}
+
+ggplot(all_sample_meta, aes(y = genome_cons_coexp_score, x = Normalization.for.this.study )) + geom_boxplot() +
+  ylim(.5,.8) + ylab('Global Preserved Co-expression score') + xlab('Organoid dataset normalization') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+ggsave(filename = 'org_normalization_boxplots_v2.pdf', path = 'graphs/organoid_coexp_tech_variables/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1981 @@
+
+preprocessing of the linnarsson first trimester single cell data
+1.6 million cells
+https://github.com/linnarsson-lab/developing-human-brain/
+
+Supp table 2 for cluster level metadata
+```{r}
+library(rhdf5)
+library(Seurat)
+library(matrixStats)
+library(dplyr)
+library(ggplot2)
+library(MetaMarkers)
+```
+
+
+```{r}
+data_file = '../data/linnarsson_first_trimester/HumanFetalBrainPool.h5'
+#Look at all the fields in the data object
+h5ls(data_file)
+h5closeAll()
+
+```
+
+First generate a mapping of clusters to cell-type annotations
+Following advice from the authors in email communication
+The posterior matrix defines probability a cluster (columns) belongs to that annotation (rows)
+Authors used a posterior of P >= 0.95 as a threshold for annotations
+Clusters can belong to multiple annotations
+Convert posterior matrix into 1s and 0s to get the cluster-cell-type annotation mapping
+
+Need to add the cell-type annotation names and cluster ids as rownames and column names to the posterior matrix
+
+AnnotationName is the cell-type annotation
+AnnotationPosterior is the posterior matrix
+AnnotationDescription has the cell-type marker scheme used for determining cell-types and an additional explanation. Use this to determine dividing progenitor, glut, and gaba 
+AnnotationDefinition is the cell-type marker scheme
+
+```{r}
+clust_posterior_mat = h5read(data_file, 'shoji/AnnotationPosterior')
+
+annot_def = h5read(data_file, 'shoji/AnnotationDefinition')
+annot_descrip = h5read(data_file, 'shoji/AnnotationDescription')
+annot_name = h5read(data_file, 'shoji/AnnotationName')            #Celltype anotations, rows of the posterior matrix
+clusterID = h5read(data_file, 'shoji/ClusterID')                  #Cluster label, columns of the posterior matrix
+
+rownames(clust_posterior_mat) = annot_name
+colnames(clust_posterior_mat) = clusterID
+
+hot_mat_posterior = clust_posterior_mat > .95                    #Hot encoded matrix for cluster and celltype annotations
+hot_mat_posterior[1:10, 1:10]
+```
+
+
+Pull out lists of the clusters that belong to dividing, intermediate, nerual progenitors, and gaba, glut, and non-neuronal classes
+For clusters with multiple cell-type annotations, aithors resolved these in various ways
+Cell-cycle annotations determined by G2M > S > G1 priority
+Intermediate progenitors were defined as cycling neurons and neuroblasts
+```{r}
+
+#Cell-type annotation and the clusters they belong to
+cluster_annot_df = reshape2::melt(hot_mat_posterior) %>% filter(value == TRUE) %>% mutate(value = NULL)  #Drop the 1/0 column after use
+colnames(cluster_annot_df) = c('celltype','cluster_num') 
+cluster_annot_df
+
+#Get the complete cell-type annotations per cluster
+cluster_nums = 0:616
+cell_type_vec = vector(mode = 'character', length = length(cluster_nums))
+for(i in 0:616){
+  cell_type_vec[i+1] = paste(cluster_annot_df$celltype[cluster_annot_df$cluster_num == i], collapse =" | ")
+}
+
+post_cluster_df = data.frame(cluster = cluster_nums, cell_type = cell_type_vec)
+
+post_cluster_df
+```
+
+```{r}
+
+
+annot_descrip
+
+```
+
+
+Looks like I'll need to go through by hand and annotate the clusters since the authors had a heirarchy of annotations but did not include it
+Did the below looking at the AnnotationDescription and following to the best of my ability the text in the manuscript
+
+
+```{r}
+
+nProg_clusts = c(1,3,6,8,9,10,33,111,173,174,175,183,184, 21, 23, 32, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 
+                 49, 50, 51, 53, 
+                 55, 56, 60, 61, 62, 63, 64, 66, 67, 72, 73, 74, 76, 78, 79, 80, 82, 83, 84, 85, 86, 90, 91, 92,
+                 94, 95, 96, 97, 100, 101, 102, 103, 105, 106, 109, 118, 121, 122, 123, 125, 127, 128, 131, 132, 133, 134, 136, 137, 138, 143, 152, 153, 154, 159, 
+                 160, 161, 163, 164, 165, 169, 170, 178, 179, 180, 181, 182, 218, 220, 222, 227, 287)
+
+
+
+
+glut_clusts = c(26, 30, 34, 52, 54, 57, 59, 139, 144, 146, 148, 206, 221, 224, 232, 291, 292, 293, 294, 295, 296, 297, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 
+                311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 385, 386, 387, 388, 389, 391, 392, 393, 394, 395, 396, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410,
+                411, 412, 413, 414, 415, 416, 417, 418, 420, 421, 422, 423, 424, 425, 426, 429, 430, 431, 439, 454, 455, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478, 479, 480, 481, 482, 483,
+                484, 485, 486, 487, 488, 497, 498, 499, 503, 508, 537, 538, 539, 540, 541, 543, 544, 548, 552, 553, 554, 555, 556, 557, 558, 559, 560, 561, 562, 563, 564, 565, 566, 567, 568, 569, 
+                570, 571, 572, 573, 574, 575, 576, 577, 578, 579, 580, 581, 582, 583, 584, 585, 586, 587, 588, 589, 591, 592, 593, 594, 595, 596, 597, 598, 600, 603)
+
+gaba_clusts = c(58, 119, 158, 171, 172, 186, 187, 188, 197, 199, 202, 203, 204, 205, 208, 209, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341,
+                342, 343, 346, 347, 348, 349, 350, 351, 352, 353, 354, 356, 357, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380,
+                381, 382, 383, 384, 397, 398, 432, 433, 434, 435,  436, 437, 440, 441, 442, 443, 444, 448, 449, 450, 451, 452, 453, 489, 490, 491, 492, 493, 494, 495, 496, 500, 501, 502, 505, 506, 
+                507, 510, 511, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 533)
+
+
+nonN_clusts = c( 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19,22, 24, 25, 27, 28, 29,31,81, 112, 129, 610, 611, 613, 614, 615)
+
+microglia_immune_clusts = c(241, 242, 243, 244, 246, 247, 248, 249, 273)
+
+other_clusts = c(0, 20, 24, 68, 113, 116, 185, 207, 210,
+                 213, 214, 215, 216, 219,289, 290, 298, 355, 390, 399, 419, 427, 428, 438, 445, 446, 447, 456,  457, 458, 459, 460, 461, 462, 463, 464, 465, 466, 467, 468, 504, 
+                 509, 512, 532, 534,
+                 535, 536, 546, 547, 549, 550, 551, 590, 599, 601, 602, 604, 605, 606, 607, 609, 65, 233, 234, 235, 236, 237, 238, 239, 240, 250,251, 252, 253, 254, 255, 256, 
+                 257, 258, 259, 
+                 260, 261,268, 270, 271, 272,274, 275, 276, 277, 278, 280, 281, 282, 283, 284, 285, 286, 288, 124, 126, 130, 262, 263, 264, 265, 266, 269  )
+
+#Notes
+#Neuron and Neuroblast clusters without other identifiers went in other
+#Clusters with RGL,GBL, but also a glut or gaba annotation went in glut or gaba groups
+#Clusters with GABA and Glut annotations go in other: 298
+#OPC celltypes go in non-neuronal
+```
+
+
+
+
+get the clusters that were annotated as intermediate progenitors
+```{r}
+cell_class = h5read(data_file, "shoji/CellClass") 
+cluster = h5read(data_file, "shoji/Clusters") 
+
+table(cell_class)
+
+#The clusters that have NeuronalIPC as their class annotation
+intProg_clusts = as.numeric(names(table(cluster[which(cell_class == 'Neuronal IPC')])))
+
+
+```
+
+Mappings between the author provided annotations and my mapping of broad cell-types
+```{r}
+#Add my broad celltype annotations to the authors annotations and save
+author_clusters = c(nProg_clusts, intProg_clusts, glut_clusts, gaba_clusts, nonN_clusts, other_clusts, microglia_immune_clusts)
+
+post_cluster_df$broad_celltype = rep('', length = nrow(post_cluster_df))
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% nProg_clusts] = 'Neural Progenitor'
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% intProg_clusts] = 'Intermediate Progenitor'
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% glut_clusts] = 'Glutamatergic'
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% gaba_clusts] = 'GABAergic'
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% nonN_clusts] = 'Non-neuronal'
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% microglia_immune_clusts] = 'Microglia/Immune'
+post_cluster_df$broad_celltype[post_cluster_df$cluster %in% other_clusts] = 'other'
+
+index = match(author_clusters, post_cluster_df$cluster)
+post_cluster_df_lite = post_cluster_df[index, ]
+post_cluster_df_lite = post_cluster_df_lite[!duplicated(post_cluster_df_lite$cell_type), ]
+post_cluster_df_lite = post_cluster_df_lite %>% arrange(broad_celltype)
+
+write.csv(post_cluster_df_lite, file = '../data/linnarsson_first_trimester/linnarsson_clust_cell_types_lite_v3.csv')
+```
+
+
+
+
+
+get the expression data and various metadata
+Age
+Clusters
+Donor
+Gene
+Region
+Tissue
+
+```{r}
+
+age = h5read(data_file, 'shoji/Age')                 #Post conceptual week age
+age = round(age, digits = 1)                         #Weird extended decimal places, but first decimal place matches the paper Supp. Table 1 descriptions
+cell_class = h5read(data_file, "shoji/CellClass")    #Annotation I want, doesn't have excitatory/inhibitory labels
+cell_id = h5read(data_file, 'shoji/CellID')          #Cell barcodes, for the expression matrix
+
+donor = h5read(data_file, 'shoji/Donor')             #Split the batches by donor, 26 datasets total, mean of 64,000 cells
+gene_names = h5read(data_file, "shoji/Gene")         #Gene annotations, for the expression matrix
+region = h5read(data_file, "shoji/Region")           #Broad region
+tissue = h5read(data_file, "shoji/Tissue")           #More specific tissues
+cluster = h5read(data_file, "shoji/Clusters")        #Cluster number, 1:617
+
+#doublets = h5read(data_file, "shoji/DoubletFlag")     #doublet flag, Filter out doublets,
+mito_percent = h5read(data_file, "shoji/MitoFraction") #Filter on mito percentages
+
+
+length(age)
+length(cell_class)
+length(gene_names)
+length(region)
+length(donor)
+length(tissue)
+```
+Look at regions and tissues
+```{r}
+
+
+
+temp_df = data.frame(age = age, region = region)
+temp_df %>% group_by(age, region) %>% summarize(age_region = length(region))
+
+
+table(region)
+```
+
+
+
+All the donors
+```{r}
+table(donor)
+donor_names = names(table(donor))
+
+table(cell_class)
+```
+ages
+```{r}
+table(age)
+
+```
+
+Make the file paths for all the datasets so I can loop through them
+
+```{r}
+
+file_df = data.frame(donor = donor, age = age)
+file_df = file_df[!duplicated(file_df), ]
+
+index = match(donor_names, file_df$donor)
+file_df = file_df[index, ]
+file_df[order(file_df$age), ]
+```
+
+```{r}
+linnarsson_unprocessed_file_paths = c('../data/seurat_objs/individual/linnarsson_GW8_1.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8_2.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8-1.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_1.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-6_1.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-6_2.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_2.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_3.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-7.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_4.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8-5_1.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6_1.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8_3.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8-5_2.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW5.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW12.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW11-5.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW13.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW14.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6_2.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW7.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW5-5.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW9-5.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW10.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW7-5.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW9-2.Rdata')
+
+
+```
+
+
+
+split the full expression matrix by donor into separate matrices, can subset into the HDF5 file using h5read(index = list(rows, columns))
+
+convert to seurat object with donor specific metadata
+add cell cycle phase from seurat
+add grouped class annotations in line with the other fetal datasets
+     add dividing progenitor label
+     add excitatory and inhibitory labels (might require some thinking)
+
+filter out QC cells, nUMI, mito percentage, doublets
+
+Then preprocess each dataset, normalize, dim reduc, etc
+
+```{r}
+
+for(donor_num in 1:length(donor_names)){
+  
+  start = Sys.time()
+  
+  #subset the expression data for all genes and the cells per donor
+  donor_index = which(donor == donor_names[donor_num])
+  donor_exp = h5read(data_file, 'shoji/Expression', index = list(1:length(gene_names), donor_index))
+  
+  #add gene names and cell_ids to the matrix
+  rownames(donor_exp) = gene_names
+  colnames(donor_exp) = cell_id[donor_index]
+  
+  #creat seurat object
+  seurat_object = CreateSeuratObject(donor_exp, project = paste('linnarsson', donor_names[donor_num], sep = '_') )
+
+  #add important metadata
+  seurat_object$cell_class = cell_class[donor_index]      #Author cell type annotations
+  seurat_object$cluster = cluster[donor_index]            #Cluster ID from the authors
+  seurat_object$post_conc_week_age = age[donor_index]     #Age of the sample
+  seurat_object$donor = donor[donor_index]                #Donor name
+  seurat_object$region = region[donor_index]              #Broad tissue region
+  seurat_object$tissue = tissue[donor_index]              #More specific tissue location
+  seurat_object$doublet_flag = doublets[donor_index]      #Flag for potential doublets, filter these out
+  seurat_object$percent.mt = mito_percent[donor_index]    #Mitochondrial percentages
+
+  
+  
+  #Make the larger labeled_classes annotation
+  labeled_classes = rep('other', ncol(seurat_object))
+  labeled_classes[seurat_object]
+  
+  
+  
+  
+  ################################
+  #old annotations, before useing the posterior matrix to classify clusters into cell types
+  ##############################
+  
+  #Make the larger labeled_classes annotation
+  labeled_classes = rep('other', ncol(seurat_object))
+  labeled_classes[seurat_object$cell_class %in% c('Radial glia')] = 'Neural_Progenitor'
+  labeled_classes[seurat_object$cell_class %in% c('Neuronal IPC')] = 'Intermediate_Progenitor'
+  labeled_classes[seurat_object$cell_class %in% c('Erythrocyte', 'Fibroblast','Glioblast','Immune','Oligo','Vascular')] = 'Non-neuronal'
+  seurat_object$labeled_classes = labeled_classes
+  
+  #For adding the Glutamatergic and GABAergic labels
+  #Get the counts for EMX1, DLX2, and FOXG1 across all the cells. These were the markers used by the authors to define excitatory and inhibiotry lineages
+  marker_df = data.frame(class = seurat_object$cell_class, cluster = seurat_object$cluster, emx1_counts = as.numeric(seurat_object['EMX1', ]@assays$RNA@counts),
+                         dlx2_counts = as.numeric(seurat_object['DLX2', ]@assays$RNA@counts),
+                         foxg1_counts = as.numeric(seurat_object['FOXG1', ]@assays$RNA@counts))
+  
+  #Summarize counts at the cluster level
+  cluster_marker_df = marker_df %>% group_by(cluster) %>% summarize(total_emx1 = sum(emx1_counts), total_dlx2 = sum(dlx2_counts), total_foxg1 = sum(foxg1_counts), class = class[1])
+  #Excitatory clusters express EMX1, if there is DLX2 overlap, annotate as Excitatory if expressing more EMX1
+  excitatory_clusters = cluster_marker_df %>% filter(total_emx1 > 0 & total_emx1 > total_dlx2 & class %in% c('Neuroblast','Neuron'))
+  seurat_object$labeled_classes[seurat_object$cluster %in% excitatory_clusters$cluster] = 'Glutamatergic'
+  #Inhibitory clusters either express DLX2 and not EMX1 or they express FOXG1 and not EMX1
+  first_gaba = cluster_marker_df %>% filter(total_dlx2 >0 & total_emx1 == 0 & class %in% c('Neuroblast','Neuron'))
+  second_gaba = cluster_marker_df %>% filter(total_emx1 == 0 & total_foxg1 > 0 & class %in% c('Neuroblast','Neuron'))
+  inhibitory_clusters = rbind(first_gaba, second_gaba[!second_gaba$cluster %in% first_gaba$cluster, ])
+  seurat_object$labeled_classes[seurat_object$cluster %in% inhibitory_clusters$cluster] = 'GABAergic'
+  
+  
+  file_name = linnarsson_unprocessed_file_paths[donor_num]
+  save(seurat_object, file = file_name)
+  
+  rm(seurat_object, donor_exp)
+  gc()
+  
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done with %i datasets...', donor_num))
+
+}
+```
+
+
+
+#######################
+Load in individual seurat objects for QC filtering, normalizations, cell cycle phase, dim reduc, etc
+
+######################
+
+```{r}
+#For the cell cycle scoring with Seurat
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+```
+
+
+
+```{r}
+start = Sys.time()
+donor_num = 1
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW8_1')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW8_1 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+table(seurat_object$labeled_classes)
+
+markers_GW8_1 %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW8_1 %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW8_1 %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW8_1 %>% filter(cell_type == 'Glutamatergic')
+markers_GW8_1 %>% filter(cell_type == 'GABAergic')
+markers_GW8_1 %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+```{r}
+start = Sys.time()
+donor_num = 2
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW8_2')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW8_2 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW8_2 %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW8_2 %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW8_2 %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW8_2 %>% filter(cell_type == 'Glutamatergic')
+markers_GW8_2 %>% filter(cell_type == 'GABAergic')
+markers_GW8_2 %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 3
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW8.1')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW8_point_1 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW8_point_1 %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW8_point_1 %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW8_point_1 %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW8_point_1 %>% filter(cell_type == 'Glutamatergic')
+markers_GW8_point_1 %>% filter(cell_type == 'GABAergic')
+markers_GW8_point_1 %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 4
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.9_1')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_9_1 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW6_point_9_1  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_9_1  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_9_1  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_9_1  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_9_1  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_9_1  %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+
+
+```{r}
+start = Sys.time()
+donor_num = 5
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.6_1')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_6_1 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW6_point_6_1   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_6_1   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_6_1  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_6_1  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_6_1  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_6_1  %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 6
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.6_2')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_6_2 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW6_point_6_2   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_6_2   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_6_2  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_6_2  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_6_2  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_6_2  %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+
+```{r}
+start = Sys.time()
+donor_num = 7
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.9_2')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_9_2 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW6_point_9_2   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_9_2   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_9_2  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_9_2  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_9_2  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_9_2  %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+```{r}
+start = Sys.time()
+donor_num = 8
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.9_3')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_9_3 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+
+```{r}
+
+markers_GW6_point_9_3   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_9_3   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_9_3  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_9_3  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_9_3  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_9_3  %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+```{r}
+start = Sys.time()
+donor_num = 9
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.7')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_7 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW6_point_7   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_7   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_7  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_7  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_7  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_7  %>% filter(cell_type == 'Non-neuronal')
+```
+
+Will have to process this one on Dactyl, too large for a Rugen's memory
+
+```{r}
+start = Sys.time()
+donor_num = 10
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6.9_4')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_point_9_4 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW6_point_9_4   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_point_9_4   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_point_9_4  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_point_9_4  %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_point_9_4  %>% filter(cell_type == 'GABAergic')
+markers_GW6_point_9_4  %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+
+
+```{r}
+start = Sys.time()
+donor_num = 11
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW8-5_1')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW8_point_5_1 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW8_point_5_1   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW8_point_5_1  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW8_point_5_1  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW8_point_5_1 %>% filter(cell_type == 'Glutamatergic')
+markers_GW8_point_5_1 %>% filter(cell_type == 'GABAergic')
+markers_GW8_point_5_1  %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 12
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6_1')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_1 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW6_1   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_1  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_1  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_1 %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_1 %>% filter(cell_type == 'GABAergic')
+markers_GW6_1  %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+```{r}
+start = Sys.time()
+donor_num = 13
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW8_3')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW8_3 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW8_3   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW8_3  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW8_3  %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW8_3 %>% filter(cell_type == 'Glutamatergic')
+markers_GW8_3 %>% filter(cell_type == 'GABAergic')
+markers_GW8_3  %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 14
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW8-5_2')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW8_point_5_2 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW8_point_5_2   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW8_point_5_2   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW8_point_5_2   %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW8_point_5_2  %>% filter(cell_type == 'Glutamatergic')
+markers_GW8_point_5_2  %>% filter(cell_type == 'GABAergic')
+markers_GW8_point_5_2   %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 15
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW5')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW5 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW5   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW5   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW5   %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW5  %>% filter(cell_type == 'Glutamatergic')
+markers_GW5  %>% filter(cell_type == 'GABAergic')
+markers_GW5   %>% filter(cell_type == 'Non-neuronal')
+```
+```{r}
+start = Sys.time()
+donor_num = 16
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW12')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW12 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW12   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW12   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW12   %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW12  %>% filter(cell_type == 'Glutamatergic')
+markers_GW12  %>% filter(cell_type == 'GABAergic')
+markers_GW12   %>% filter(cell_type == 'Non-neuronal')
+```
+```{r}
+start = Sys.time()
+donor_num = 17
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW11-5')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW11_point_5 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+```{r}
+
+markers_GW11_point_5    %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW11_point_5    %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW11_point_5    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW11_point_5   %>% filter(cell_type == 'Glutamatergic')
+markers_GW11_point_5   %>% filter(cell_type == 'GABAergic')
+markers_GW11_point_5    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 18
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW13')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW13 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW13   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW13    %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW13    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW13  %>% filter(cell_type == 'Glutamatergic')
+markers_GW13  %>% filter(cell_type == 'GABAergic')
+markers_GW13    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 19
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW14')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW14 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW14   %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW14    %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW14    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW14  %>% filter(cell_type == 'Glutamatergic')
+markers_GW14  %>% filter(cell_type == 'GABAergic')
+markers_GW14    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 20
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW6_2')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW6_2 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW6_2  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW6_2   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW6_2    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW6_2 %>% filter(cell_type == 'Glutamatergic')
+markers_GW6_2  %>% filter(cell_type == 'GABAergic')
+markers_GW6_2    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 21
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW7')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW7 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW7  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW7   %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW7    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW7 %>% filter(cell_type == 'Glutamatergic')
+markers_GW7  %>% filter(cell_type == 'GABAergic')
+markers_GW7    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 22
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW5-5')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW5_point_5 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW5_point_5  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW5_point_5  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW5_point_5    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW5_point_5 %>% filter(cell_type == 'Glutamatergic')
+markers_GW5_point_5  %>% filter(cell_type == 'GABAergic')
+markers_GW5_point_5    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 23
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW9-5')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW9_point_5 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW9_point_5  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW9_point_5  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW9_point_5    %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW9_point_5 %>% filter(cell_type == 'Glutamatergic')
+markers_GW9_point_5  %>% filter(cell_type == 'GABAergic')
+markers_GW9_point_5    %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 24
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW10')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW10 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW10  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW10  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW10   %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW10 %>% filter(cell_type == 'Glutamatergic')
+markers_GW10 %>% filter(cell_type == 'GABAergic')
+markers_GW10   %>% filter(cell_type == 'Non-neuronal')
+```
+
+```{r}
+start = Sys.time()
+donor_num = 25
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW7-5')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW7_point_5 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+```{r}
+
+markers_GW7_point_5  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW7_point_5  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW7_point_5   %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW7_point_5 %>% filter(cell_type == 'Glutamatergic')
+markers_GW7_point_5 %>% filter(cell_type == 'GABAergic')
+markers_GW7_point_5   %>% filter(cell_type == 'Non-neuronal')
+```
+```{r}
+start = Sys.time()
+donor_num = 26
+linnarsson_unprocessed_file_paths[donor_num]
+load(linnarsson_unprocessed_file_paths[donor_num])
+
+seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 & doublet_flag == F )
+seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+seurat_object = FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F)
+all.genes <- rownames(seurat_object)
+seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F)
+
+#Get a cell cycle score
+seurat_object <- CellCycleScoring(seurat_object, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+#Run Dimreduc
+seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F)
+seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F)
+
+#Add the dividing progenitor labels
+seurat_object$labeled_classes[seurat_object$Phase %in% c('S','G2M') & seurat_object$labeled_classes %in% c('Neural_Progenitor', 'Intermediate_Progenitor') ] = 'Dividing_Progenitor'
+
+DimPlot(seurat_object,reduction = 'umap', group.by = 'cell_class')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'labeled_classes') + ggtitle('GW9-2')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'Phase')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'region')
+DimPlot(seurat_object,reduction = 'umap', group.by = 'tissue')
+
+#Get the Markers at the class label for MetaMarkers later
+markers_GW9_point_2 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+#save the individual seurat objects
+save(seurat_object, file = '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata')
+rm(seurat_object)
+gc()
+
+end = Sys.time()
+print(end - start)
+```
+
+
+```{r}
+
+markers_GW9_point_2  %>% filter(cell_type == 'Dividing_Progenitor')
+markers_GW9_point_2  %>% filter(cell_type == 'Neural_Progenitor')
+markers_GW9_point_2   %>% filter(cell_type == 'Intermediate_Progenitor')
+
+markers_GW9_point_2 %>% filter(cell_type == 'Glutamatergic')
+markers_GW9_point_2 %>% filter(cell_type == 'GABAergic')
+markers_GW9_point_2   %>% filter(cell_type == 'Non-neuronal')
+```
+
+
+
+##################################
+Adding new cluster class annotations, using the posterior probability matrix provided by the authors
+##################################
+
+Load in a dataset, add the new annotations, look at the umap, get new metaMarkers with these annotations, save them as version2
+```{r}
+human_fetal_dataset_paths = list('../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata')
+
+
+marker_paths = c( "6_26_24_linnarsson_metaMarkers/linnarsson_GW5_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW5-5_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6_1_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6_2_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_1_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_2_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-7_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_1_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_2_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_3_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_4_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW7_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW7-5_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW8_1_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW8_2_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW8_3_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW8-1_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_1_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_2_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW9-2_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW9-5_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW10_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW11-5_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW12_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW13_fetal_class_markers_v4_temp.csv" ,
+"6_26_24_linnarsson_metaMarkers/linnarsson_GW14_fetal_class_markers_v4_temp.csv" )
+
+```
+
+
+```{r}
+
+load(human_fetal_dataset_paths[[1]])
+
+```
+
+
+
+
+```{r}
+
+for(dataset_num in 1:length(human_fetal_dataset_paths)){
+
+  start = Sys.time()
+  load(human_fetal_dataset_paths[[dataset_num]])
+  
+  #Rename the old annotated classes
+  #md = seurat_object@meta.data
+  #names(md)[names(md) == 'labeled_classes'] = 'old_labeled_classes'
+  #seurat_object@meta.data = md
+  
+  #add new class annotations
+  labeled_classes = rep('other', length = ncol(seurat_object))
+  labeled_classes[seurat_object$cluster %in% nProg_clusts] = 'Neural_Progenitor'
+  labeled_classes[seurat_object$cluster %in% intProg_clusts] = 'Intermediate_Progenitor'
+  labeled_classes[seurat_object$cluster %in% gaba_clusts] = 'GABAergic'
+  labeled_classes[seurat_object$cluster %in% glut_clusts] = 'Glutamatergic'
+  labeled_classes[seurat_object$cluster %in% nonN_clusts] = 'Non-neuronal'
+  labeled_classes[seurat_object$cluster %in% microglia_immune_clusts] = 'Microglia/Immune'
+  
+  #Keep the original dividing progenitor annotations determined by seurat process
+  labeled_classes[seurat_object$old_labeled_classes == 'Dividing_Progenitor'] = 'Dividing_Progenitor'
+  seurat_object$labeled_classes = labeled_classes
+  
+  DimPlot(seurat_object, group.by = 'labeled_classes')
+  DimPlot(seurat_object, group.by = 'old_labeled_classes')
+  
+  markers_v3 = compute_markers(seurat_object@assays$RNA@data, seurat_object$labeled_classes)
+
+  export_markers(markers_v3, marker_paths[dataset_num])
+  save(seurat_object, file = human_fetal_dataset_paths[[dataset_num]])
+  rm(seurat_object, markers_v3)
+  gc()
+  
+  end = Sys.time()
+  print(sprintf("Done with %i datasets...", dataset_num))
+  print(end - start)
+}
+
+```
+
+
+
+####################
+Calculate the co-expression networks for these datasets
+
+####################
+
+
+
+```{r}
+library(org.Hs.eg.db)
+library(EGAD)
+library(AnnotationDbi)
+
+#GO database from GOSOURCEDATE: 2023-01-01, it's tied to the version of R. current version of R is 4.3.1
+org.Hs.eg.db #running this will print out the GO database version information
+go_table <- as.data.frame(org.Hs.egGO2ALLEGS) #gene mapping to the direct GO term and that term's children
+go_table$gene_symbol = mapIds(org.Hs.eg.db, go_table$gene_id, "SYMBOL","ENTREZID") #Add gene symbol 
+annotations <- make_annotations(go_table[,c("gene_symbol", "go_id")], unique(go_table$gene_symbol), unique(go_table$go_id))
+dim(annotations)
+annotations[1:10, 1:10]
+
+
+go_genes = unique(go_table$gene_symbol)
+length(go_genes)
+go_terms = unique(go_table$go_id)
+length(go_terms)
+```
+
+```{r}
+human_fetal_dataset_paths = c('../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+'../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata')
+
+coexp_names = c('linnarsson_GW5', 'linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1','linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2',
+                'linnarsson_GW6-9_3','linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2','linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1',
+                'linnarsson_GW8-5_2','linnarsson_GW9-2','linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13','linnarsson_GW14')
+
+```
+
+Load in data and filter for the GO genes
+Use python to get coexpression matrix
+```{r}
+library(reticulate)
+library(data.table)  #frank()  function
+np <- import("numpy")
+source_python('python_coexpression.py')
+```
+
+
+Datasets too large, need to do on dactyl
+
+
+```{r}
+for(i in 1:length(human_fetal_dataset_paths)){
+  
+  start = Sys.time()
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  dataset_genes = rownames(dataset)
+  #Filter for the GO gene universe
+  dataset_genes_in_go = dataset_genes[dataset_genes %in% go_genes]
+  dataset_genes_missing_from_go = go_genes[! go_genes %in% dataset_genes]
+  #Subset the gene expression for the genes present in GO
+  dataset_gene_index = dataset_genes %in% dataset_genes_in_go
+  exp_data = as.matrix(dataset@assays$RNA@data[dataset_gene_index, ])
+  #Add zero counts for the missing GO genes
+  go_missing = matrix(0, nrow = length(dataset_genes_missing_from_go), ncol = ncol(exp_data), dimnames = list(dataset_genes_missing_from_go, colnames(exp_data)))
+  exp_data = rbind(exp_data, go_missing)
+  r_genes = rownames(exp_data)
+  
+  suppressWarnings(rm(seurat_object, dataset))
+  gc()
+  
+  
+  #Get coexpression data
+  test_py_exp = np$array(exp_data) #Turn R matrix into numpy array
+  rm(exp_data)
+  gc()
+  python_script_test = get_coexpression(test_py_exp, r_genes) #Python method for spearman correlations, coexpression
+  rm(test_py_exp)
+  gc()
+
+  corr_matrix = as.matrix(python_script_test) #Turn to matrix
+  #Convert Nans to 0, these are genes with 0 expression in any cells
+  corr_matrix[!is.finite(corr_matrix)] = 0
+  
+  file_name = sprintf('../data/coexpression/fetal/8_17_23_GO_coexp/%s_coexp.Rdata', coexp_names[i])
+  save(corr_matrix, file = file_name)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done getting coexpression from %i dataset...', i))
+  
+  #Rank the coexpression data
+  #Rank everything, I want the minimum rank to be 1, so ties are minimum. Subtracting 1 sets the minimum rank to 0
+  rank_corr = frank(c(corr_matrix), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(corr_matrix), ncol = ncol(corr_matrix), dimnames = list(rownames(corr_matrix), colnames(corr_matrix)))
+  diag(rank_corr_matrix) = 1
+  
+  file_name = sprintf('../data/coexpression/fetal/8_17_23_GO_coexp/ranked_%s_coexp.Rdata', coexp_names[i])
+  save(rank_corr_matrix, file =file_name)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done ranking coexpression from %i dataset...', i))  
+  
+  rm(corr_matrix, rank_corr, norm_rank_corr, rank_corr_matrix)
+  gc()
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

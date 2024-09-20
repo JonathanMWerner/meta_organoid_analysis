@@ -1,0 +1,1502 @@
+
+
+
+Cross validation of the fetal metamarkers
+
+leave one out, generate fetal metamarkers, get accuracy for class annotations as num markers increases
+Save list of top 200? genes, gene jaccard of all the gene lists, pairwise comparison. Trying to show the metamarkers are not changing
+
+
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(MetBrewer)
+library(tidyr)
+library(tibble)
+library(parallel)
+library(viridis)
+library(ComplexHeatmap)
+library(matrixStats)
+```
+
+
+Check the same with the fetal data
+
+```{r}
+class_palette = met.brewer("Archambault", 20)
+class_palette
+
+fetal_class_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 'Glutamatergic' = class_palette[14], 'Neural_Progenitor' = class_palette[4], 
+                  'Dividing_Progenitor' = class_palette[10], 'Intermediate_Progenitor' = class_palette[16], 'Microglia/Immune' = class_palette[18],
+                  'other' = 'grey')
+fetal_class_palette
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+
+#de_list, list of DE stats from MetaMarkers, markers for each individual dataset
+#cell_type, cell type you want the markers for
+#metric, metric to rank the genes by
+#num_markers, how many markers we want to extract
+
+get_ranked_genes = function(de_list, celltype, metric, num_markers){
+  
+  #If ordering by metamarker rank, should not be descending, 1 is at the top
+  if(metric == 'rank'){
+    celltype_de = filter(de_list, celltype == cell_type) %>% arrange(!!as.name(metric)) 
+  }else{ celltype_de = filter(de_list, celltype == cell_type) %>% arrange(desc(!!as.name(metric)))}
+  
+  top_markers = celltype_de$gene[1:num_markers]
+  return(top_markers)
+}
+
+
+compute_auc = function(scores, label){
+  label = as.logical(label)
+  n1 = as.numeric(sum(label))
+  n2 = as.numeric(sum(!label))
+  R1 = sum(rank(scores)[label])
+  U1 = R1 - n1 * (n1 + 1)/2
+  auc = U1/(n1 * n2)
+  return(auc)
+}
+
+
+auc_agg_predictor = function(dataset, metaMarkers, celltype, metric, num_markers){
+
+  #get a marker set from the metamarkers, based on the metamarkers ranking
+  marker_set = get_ranked_genes(metaMarkers, celltype, metric , num_markers )
+  #Get an aggregate predictor from those markers
+  agg_predictor = suppressWarnings(rowSums(FetchData(dataset ,marker_set )))
+  #Get labels for the celltype identity
+  cell_type_label = dataset[[]][ ,'labeled_classes'] == celltype
+  #Calculate the AUC
+  auc = compute_auc(agg_predictor, cell_type_label)
+  
+  return(auc)
+}
+
+
+
+
+
+```
+
+
+
+
+```{r}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+```
+
+
+
+
+
+
+##########################################
+Cross-validation for all fetal datasets
+Start with the same approach as above, leave one out and get new metamarkers, predict annotations
+
+
+Also do a 1 vs 1 approach with the top 100 markers per dataset, get heat maps per celltype and annotate the fetal datasets by age and trimester 
+
+
+#######################################
+
+
+
+
+Datasets to test
+```{r}
+
+
+human_fetal_dataset_names = c( 
+                               'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
+                               'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
+                               'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
+                               'linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2',
+                               'linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13', 'linnarsson_GW14',
+                               'areal_GW14','poliodakis_geschwind_batch1', 'poliodakis_geschwind_batch2','areal_GW18_2','areal_GW19','areal_GW19_2',
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25','fan_fu')
+
+human_fetal_dataset_paths = list(
+                                 '../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
+                                 '../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata')
+
+
+names(human_fetal_dataset_paths)= human_fetal_dataset_names 
+
+fetal_ages = c('GW5','GW5-5','GW6_1','GW6_2','GW6-6_1','GW6-6_2','GW6-7','GW6-9_1','GW6-9_2','GW6-9_3','GW6-9_4','GW7','GW7-5','GW8_1','GW8_2','GW8_3','GW8-1','GW8-5_1','GW8-5_2','GW9-2',
+               'GW9-5','GW10','GW11-5','GW12','GW13','GW14_1','GW14_2','GW17-18_1','GW17-18_2','GW18','GW19_1','GW19_2','GW20_1','GW20_2','GW20_3','GW25','GW7-28')
+
+```
+
+
+
+
+```{r}
+test_markers = list(
+  linnarsson_GW5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW5_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5-5_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_1_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_2_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_1_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_2_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-7_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_9_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_1_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_9_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_2_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_9_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_3_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW6_point_9_4 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_4_fetal_class_markers_v4.csv.gz"), 
+  linnarsson_GW7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW7_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7-5_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW8_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_1_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW8_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_2_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW8_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_3_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW8_point_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-1_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW8_point_5_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_1_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW8_point_5_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_2_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW9_point_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-2_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW9_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-5_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW10 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW10_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW11_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW11-5_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW12 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW12_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW13 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW13_fetal_class_markers_v4.csv.gz"),
+  linnarsson_GW14 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW14_fetal_class_markers_v4.csv.gz"),
+  areal_GW14 = read_markers("6_26_24_annot_metaMarkers/areal_GW14_fetal_class_markers.csv.gz"),
+  poliodakis_1 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch1_fetal_class_markers.csv.gz"),
+  poliodakis_2 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch2_fetal_class_markers.csv.gz"),
+  areal_GW18_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW18_2_fetal_class_markers.csv.gz"),
+  areal_GW19 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_fetal_class_markers.csv.gz"),
+  areal_GW19_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_2_fetal_class_markers.csv.gz"),
+  areal_GW20 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_fetal_class_markers.csv.gz"),
+  areal_GW20_31 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_31_fetal_class_markers.csv.gz"),
+  areal_GW20_34 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_34_fetal_class_markers.csv.gz"),
+  areal_GW25 = read_markers("6_26_24_annot_metaMarkers/areal_GW25_fetal_class_markers.csv.gz"),
+  fan_fu = read_markers("6_26_24_annot_metaMarkers/fan_fu_fetal_class_markers.csv.gz"))
+
+test_fetal_meta_markers = make_meta_markers(test_markers, detailed_stats = TRUE)
+test_fetal_meta_markers = filter(test_fetal_meta_markers, cell_type != 'other')
+```
+
+
+```{r}
+filter(test_fetal_meta_markers, rank <=100)
+
+plot_pareto_markers(test_fetal_meta_markers, 'GABAergic', min_recurrence = 0)
+plot_pareto_markers(test_fetal_meta_markers, 'Glutamatergic', min_recurrence = 0)
+plot_pareto_markers(test_fetal_meta_markers, 'Non-neuronal', min_recurrence = 0)
+plot_pareto_markers(test_fetal_meta_markers, 'Neural_Progenitor', min_recurrence = 0)
+plot_pareto_markers(test_fetal_meta_markers, 'Intermediate_Progenitor', min_recurrence = 0)
+plot_pareto_markers(test_fetal_meta_markers, 'Dividing_Progenitor', min_recurrence = 0)
+plot_pareto_markers(test_fetal_meta_markers, 'Microglia/Immune', min_recurrence = 0)
+```
+
+
+
+```{r}
+
+metaMarker_auroc_df = data.frame(dataset = c(), celltype = c(), num_markers = c(), auroc = c())
+
+
+for(i in 1:length(human_fetal_dataset_paths)){
+  start = Sys.time()
+  #Load up dataset
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset, GW14_merged_dataset, GW17_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset,GW19_2_merged_dataset,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset, seurat_object))
+  gc()
+  #Metamarkers excluding that dataset
+  test_dataset_name = names(test_markers[i])
+  temp_test_markers = test_markers[names(test_markers) != test_dataset_name]
+  agg_de_stats = make_meta_markers(temp_test_markers, detailed_stats = T)
+  agg_de_stats = agg_de_stats %>% filter(cell_type != 'other')
+  
+  
+  test_cell_type = c('Glutamatergic','GABAergic','Neural_Progenitor','Non-neuronal','Dividing_Progenitor', 'Intermediate_Progenitor', 'Microglia/Immune')
+  numMarkers = c(10, 20, 50, 100, 250, 500)
+  
+  for(cell in test_cell_type){
+    
+    celltype_vec = rep(cell, length = length(numMarkers))
+    dataset_vec = rep(test_dataset_name, length = length(numMarkers))
+    auc_vec = vector(mode = 'numeric', length = length(numMarkers))
+
+    for(j in 1:length(numMarkers)){
+      #dups =  agg_de_stats %>% filter(rank <= numMarkers[j]) %>% pull(gene)
+      #dups = dups[duplicated(dups)]
+      auc_vec[j] = auc_agg_predictor(dataset, agg_de_stats, cell, metric = 'recurrence', numMarkers[j])
+    }
+    
+    temp_df = data.frame(dataset = dataset_vec, celltype = celltype_vec, num_markers = numMarkers, auroc = auc_vec)
+    metaMarker_auroc_df = rbind(metaMarker_auroc_df, temp_df)
+  }
+  
+  end = Sys.time()
+  print(sprintf('Done with %i datasets...', i))
+  print(end - start)
+
+}
+
+metaMarker_auroc_df
+```
+
+
+
+```{r}
+save(metaMarker_auroc_df, 
+     file = 'fetal_metaMarker_cross_validation/6_26_24/cross_dataset_auroc_class_results_metaMarker_all_fetal.Rdata')
+```
+
+
+```{r}
+load(file = 'fetal_metaMarker_cross_validation/6_26_24/cross_dataset_auroc_class_results_metaMarker_all_fetal.Rdata')
+```
+
+
+
+```{r}
+metaMarker_auroc_df$num_markers = as.character(metaMarker_auroc_df$num_markers )
+metaMarker_auroc_df$num_markers = factor(metaMarker_auroc_df$num_markers, levels = c('10','20','50','100','250','500') )
+metaMarker_auroc_df$celltype = factor(metaMarker_auroc_df$celltype, levels = c('Dividing_Progenitor','Neural_Progenitor','Intermediate_Progenitor',
+                                                                               'GABAergic','Glutamatergic','Non-neuronal', 'Microglia/Immune'))
+
+
+ggplot(filter(metaMarker_auroc_df, celltype != 'Microglia/Immune'), aes(x = num_markers, y = auroc, fill = num_markers)) + geom_boxplot() + facet_wrap(~celltype) +
+  ylim(.5, 1) + scale_fill_manual(values = magma(6)) + geom_hline( yintercept = .5, color = 'red', linetype = 'dashed') +
+  xlab('Number of Primary tissue MetaMarkers') + ylab('Predicting Primary tissue cell-types (AUROC)')
+ggsave(filename = 'auroc_cross_validataion_metaMarker_boxplots_all_fetal.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/roc_pr_curves/', 
+device = 'pdf', useDingbats = F, height = 6, width = 10)
+
+ggplot(filter(metaMarker_auroc_df, celltype == 'Microglia/Immune'), aes(x = num_markers, y = auroc, fill = num_markers)) + geom_boxplot()  +
+  ylim(.5, 1) + scale_fill_manual(values = magma(6)) + geom_hline( yintercept = .5, color = 'red', linetype = 'dashed') +
+  xlab('Number of Fetal MetaMarkers') + ylab('Predicting Fetal cell-types (AUROC)') + ggtitle('Microglia/Immune')
+
+
+```
+
+Get the average for the top 10 markers across all fetal datasets
+and the average of the top 100 for the GABAewrgic markers, only celltype with a slight decrease in performance with 100 markers
+
+
+```{r}
+
+metaMarker_auroc_df %>% group_by(celltype, num_markers) %>% summarize(mean = mean(auroc, na.rm = T), sd = sd(auroc, na.rm = T)) %>% filter(num_markers == 10)
+metaMarker_auroc_df %>% group_by(celltype, num_markers) %>% summarize(median = median(auroc, na.rm = T), perc25 = quantile(auroc, probs = c(.25), na.rm = T), 
+                                                                      perc75 = quantile(auroc, probs = c(.75), na.rm = T)) %>% filter(num_markers == 10)
+```
+
+
+
+```{r}
+
+metaMarker_auroc_df %>% group_by(celltype, num_markers) %>% summarize(mean = mean(auroc, na.rm = T), sd = sd(auroc, na.rm = T)) %>% filter(num_markers == 100)
+metaMarker_auroc_df %>% group_by(celltype, num_markers) %>% summarize(median = median(auroc, na.rm = T), perc25 = quantile(auroc, probs = c(.25), na.rm = T), 
+                                                                      perc75 = quantile(auroc, probs = c(.75), na.rm = T)) %>% filter(num_markers == 100)
+```
+
+
+##########################
+
+Do the 1 vs 1, see if there are any obvious outlier datasets
+
+#########################
+
+```{r}
+
+n_markers = 100
+rank_metric = 'auroc'
+nProg_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+divProg_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+intProg_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+gaba_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+glut_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+nonN_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+micro_fetal_1v1_mat = matrix(nrow = length(human_fetal_dataset_paths), ncol = length(human_fetal_dataset_paths), dimnames= list(fetal_ages, fetal_ages))
+
+
+for(i in 1:length(human_fetal_dataset_paths)){
+  
+  start = Sys.time()
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset_batch1, poliodakis_dataset_batch2, GW14_merged_dataset, GW17_merged_dataset, GW18_2_merged_dataset,
+                      GW19_merged_dataset,GW19_2_merged_dataset,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset, seurat_object))
+  gc()
+  
+  for(j in 1:length(test_markers)){
+    #Run through the dataset specific markers and predict celltype annotations
+    current_de_markers = test_markers[[j]]
+    nProg_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'Neural_Progenitor', metric = rank_metric, num_markers = n_markers)
+    divProg_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'Dividing_Progenitor', metric = rank_metric, num_markers = n_markers)
+    intProg_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'Intermediate_Progenitor', metric = rank_metric, num_markers = n_markers)
+    gaba_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'GABAergic', metric = rank_metric, num_markers = n_markers)
+    glut_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'Glutamatergic', metric = rank_metric, num_markers = n_markers)
+    nonN_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'Non-neuronal', metric = rank_metric, num_markers = n_markers)
+    micro_fetal_1v1_mat[i, j] = auc_agg_predictor(dataset, current_de_markers, 'Microglia/Immune', metric = rank_metric, num_markers = n_markers)
+    
+  }
+  
+  end = Sys.time()
+  print(sprintf('Done with %i datasets...', i))
+  print(end - start)
+
+}
+
+```
+
+#Columns are using that datasets markers to predict other datasets annotations (rows)
+```{r}
+row_names = paste('annotations', fetal_ages, sep = '_')
+col_names = paste('markers', fetal_ages, sep = '_')
+
+rownames(nProg_fetal_1v1_mat) = row_names
+colnames(nProg_fetal_1v1_mat) = col_names
+
+rownames(divProg_fetal_1v1_mat) = row_names
+colnames(divProg_fetal_1v1_mat) = col_names
+
+rownames(intProg_fetal_1v1_mat) = row_names
+colnames(intProg_fetal_1v1_mat) = col_names
+
+rownames(gaba_fetal_1v1_mat) = row_names
+colnames(gaba_fetal_1v1_mat) = col_names
+
+rownames(glut_fetal_1v1_mat) = row_names
+colnames(glut_fetal_1v1_mat) = col_names
+
+rownames(nonN_fetal_1v1_mat) = row_names
+colnames(nonN_fetal_1v1_mat) = col_names
+```
+
+
+```{r}
+save(nProg_fetal_1v1_mat, divProg_fetal_1v1_mat, intProg_fetal_1v1_mat, gaba_fetal_1v1_mat, glut_fetal_1v1_mat, nonN_fetal_1v1_mat,
+     file = '../data/fetal_1v1/6_26_24/cell_type_1v1_mats.Rdata')
+```
+
+Add the leave one out MetaMarkers results to the matrices
+
+```{r}
+load(file = '../data/fetal_1v1/6_26_24/cell_type_1v1_mats.Rdata')
+```
+
+
+```{r}
+
+metaMarker_100_scores_nProg = filter(metaMarker_auroc_df, num_markers == 100, celltype == 'Neural_Progenitor')
+metaMarker_100_scores_divProg = filter(metaMarker_auroc_df, num_markers == 100, celltype == 'Dividing_Progenitor')
+metaMarker_100_scores_intProg = filter(metaMarker_auroc_df, num_markers == 100, celltype == 'Intermediate_Progenitor')
+metaMarker_100_scores_gaba = filter(metaMarker_auroc_df, num_markers == 100, celltype == 'GABAergic')
+metaMarker_100_scores_glut = filter(metaMarker_auroc_df, num_markers == 100, celltype == 'Glutamatergic')
+metaMarker_100_scores_nonN = filter(metaMarker_auroc_df, num_markers == 100, celltype == 'Non-neuronal')
+
+age_order = c('linnarsson_GW5' ,'linnarsson_GW5_point_5' ,'linnarsson_GW6_1' ,'linnarsson_GW6_2' ,'linnarsson_GW6_point_6_1' ,'linnarsson_GW6_point_6_2' ,'linnarsson_GW6_point_7',
+    'linnarsson_GW6_point_9_1','linnarsson_GW6_point_9_2' ,'linnarsson_GW6_point_9_3' ,'linnarsson_GW6_point_9_4' , 'linnarsson_GW7' ,'linnarsson_GW7_point_5' ,'linnarsson_GW8_1' ,
+    'linnarsson_GW8_2' ,'linnarsson_GW8_3' ,'linnarsson_GW8_point_1' ,'linnarsson_GW8_point_5_1' ,'linnarsson_GW8_point_5_2' ,'linnarsson_GW9_point_2','linnarsson_GW9_point_5',
+    'linnarsson_GW10' ,'linnarsson_GW11_point_5' ,'linnarsson_GW12' ,'linnarsson_GW13','linnarsson_GW14' ,'areal_GW14' ,'poliodakis_1' ,'poliodakis_2','areal_GW18_2' ,'areal_GW19',
+    'areal_GW19_2' , 'areal_GW20', 'areal_GW20_31' ,'areal_GW20_34','areal_GW25','fan_fu')
+
+nProg_fetal_1v1_mat = cbind(nProg_fetal_1v1_mat, 
+                            'MetaMarkers' = metaMarker_100_scores_nProg[match(age_order,metaMarker_100_scores_nProg$dataset), 'auroc' ])
+divProg_fetal_1v1_mat = cbind(divProg_fetal_1v1_mat, 
+                            'MetaMarkers' = metaMarker_100_scores_divProg[match(age_order,metaMarker_100_scores_divProg$dataset), 'auroc' ])
+intProg_fetal_1v1_mat = cbind(intProg_fetal_1v1_mat, 
+                            'MetaMarkers' = metaMarker_100_scores_intProg[match(age_order,metaMarker_100_scores_intProg$dataset), 'auroc' ])
+gaba_fetal_1v1_mat = cbind(gaba_fetal_1v1_mat, 
+                            'MetaMarkers' = metaMarker_100_scores_gaba[match(age_order,metaMarker_100_scores_gaba$dataset), 'auroc' ])
+glut_fetal_1v1_mat = cbind(glut_fetal_1v1_mat, 
+                            'MetaMarkers' = metaMarker_100_scores_glut[match(age_order,metaMarker_100_scores_glut$dataset), 'auroc' ])
+nonN_fetal_1v1_mat = cbind(nonN_fetal_1v1_mat, 
+                            'MetaMarkers' = metaMarker_100_scores_nonN[match(age_order,metaMarker_100_scores_nonN$dataset), 'auroc' ])
+```
+
+Plot results
+
+
+```{r}
+#Var1 is predicting dataset annotations
+#Var2 is using that datasets' markers
+
+#Order by median performance for that datasets markers
+nProg_fetal_1v1_melt = reshape2::melt(nProg_fetal_1v1_mat)
+nProg_order = nProg_fetal_1v1_melt %>% group_by(Var2) %>% summarize(median = median(value, na.rm = T)) %>% arrange(median)
+nProg_fetal_1v1_melt$Var2 = factor(nProg_fetal_1v1_melt$Var2, levels = nProg_order$Var2)
+#add a color vector to have the MetaMarkers stand out
+metaMarker_color = rep('Individual dataset markers', length = nrow(nProg_fetal_1v1_melt))
+metaMarker_color[nProg_fetal_1v1_melt$Var2=='MetaMarkers'] = 'MetaMarkers'
+ggplot(nProg_fetal_1v1_melt, aes( x = Var2, y = value, color = metaMarker_color)) + geom_boxplot() + ylim(.2, 1) +
+  xlab('Top 100 dataset markers') + ylab('Predicting fetal annotations (auroc)') + ggtitle('Neural progenitors') +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'nProg_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+#Order by median performance for that datasets markers
+divProg_fetal_1v1_melt = reshape2::melt(divProg_fetal_1v1_mat)
+divProg_order = divProg_fetal_1v1_melt %>% group_by(Var2) %>% summarize(median = median(value, na.rm = T)) %>% arrange(median)
+divProg_fetal_1v1_melt$Var2 = factor(divProg_fetal_1v1_melt$Var2, levels = divProg_order$Var2)
+#add a color vector to have the MetaMarkers stand out
+metaMarker_color = rep('Individual dataset markers', length = nrow(divProg_fetal_1v1_melt))
+metaMarker_color[divProg_fetal_1v1_melt$Var2=='MetaMarkers'] = 'MetaMarkers'
+ggplot(divProg_fetal_1v1_melt, aes( x = Var2, y = value, color = metaMarker_color)) + geom_boxplot() + ylim(.2, 1) +
+  xlab('Top 100 dataset markers') + ylab('Predicting fetal annotations (auroc)') + ggtitle('Dividing progenitors') +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'divProg_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+#Order by median performance for that datasets markers
+intProg_fetal_1v1_melt = reshape2::melt(intProg_fetal_1v1_mat)
+intProg_order = intProg_fetal_1v1_melt %>% group_by(Var2) %>% summarize(median = median(value, na.rm = T)) %>% arrange(median)
+intProg_fetal_1v1_melt$Var2 = factor(intProg_fetal_1v1_melt$Var2, levels = intProg_order$Var2)
+#add a color vector to have the MetaMarkers stand out
+metaMarker_color = rep('Individual dataset markers', length = nrow(intProg_fetal_1v1_melt))
+metaMarker_color[intProg_fetal_1v1_melt$Var2=='MetaMarkers'] = 'MetaMarkers'
+ggplot(intProg_fetal_1v1_melt, aes( x = Var2, y = value, color = metaMarker_color)) + geom_boxplot() + ylim(.2, 1) +
+  xlab('Top 100 dataset markers') + ylab('Predicting fetal annotations (auroc)') + ggtitle('Intermediate progenitors') +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'intProg_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+#Order by median performance for that datasets markers
+gaba_fetal_1v1_melt = reshape2::melt(gaba_fetal_1v1_mat)
+gaba_order = gaba_fetal_1v1_melt %>% group_by(Var2) %>% summarize(median = median(value, na.rm = T)) %>% arrange(median)
+gaba_fetal_1v1_melt$Var2 = factor(gaba_fetal_1v1_melt$Var2, levels = gaba_order$Var2)
+#add a color vector to have the MetaMarkers stand out
+metaMarker_color = rep('Individual dataset markers', length = nrow(gaba_fetal_1v1_melt))
+metaMarker_color[gaba_fetal_1v1_melt$Var2=='MetaMarkers'] = 'MetaMarkers'
+ggplot(gaba_fetal_1v1_melt, aes( x = Var2, y = value, color = metaMarker_color)) + geom_boxplot() + ylim(.2, 1) +
+  xlab('Top 100 dataset markers') + ylab('Predicting fetal annotations (auroc)') + ggtitle('GABAergic neurons') +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'gaba_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+#Order by median performance for that datasets markers
+glut_fetal_1v1_melt = reshape2::melt(glut_fetal_1v1_mat)
+glut_order = glut_fetal_1v1_melt %>% group_by(Var2) %>% summarize(median = median(value, na.rm = T)) %>% arrange(median)
+glut_fetal_1v1_melt$Var2 = factor(glut_fetal_1v1_melt$Var2, levels = glut_order$Var2)
+#add a color vector to have the MetaMarkers stand out
+metaMarker_color = rep('Individual dataset markers', length = nrow(glut_fetal_1v1_melt))
+metaMarker_color[glut_fetal_1v1_melt$Var2=='MetaMarkers'] = 'MetaMarkers'
+ggplot(glut_fetal_1v1_melt, aes( x = Var2, y = value, color = metaMarker_color)) + geom_boxplot() + ylim(.2, 1) +
+  xlab('Top 100 dataset markers') + ylab('Predicting fetal annotations (auroc)') + ggtitle('Glutamatergic neurons') +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'glut_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+#Order by median performance for that datasets markers
+nonN_fetal_1v1_melt = reshape2::melt(nonN_fetal_1v1_mat)
+nonN_order = nonN_fetal_1v1_melt %>% group_by(Var2) %>% summarize(median = median(value, na.rm = T)) %>% arrange(median)
+nonN_fetal_1v1_melt$Var2 = factor(nonN_fetal_1v1_melt$Var2, levels = nonN_order$Var2)
+#add a color vector to have the MetaMarkers stand out
+metaMarker_color = rep('Individual dataset markers', length = nrow(nonN_fetal_1v1_melt))
+metaMarker_color[nonN_fetal_1v1_melt$Var2=='MetaMarkers'] = 'MetaMarkers'
+ggplot(nonN_fetal_1v1_melt, aes( x = Var2, y = value, color = metaMarker_color)) + geom_boxplot() + ylim(.2, 1) +
+  xlab('Top 100 dataset markers') + ylab('Predicting fetal annotations (auroc)') + ggtitle('Non-neuronal') +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'nonN_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+
+```
+
+Get a plot showing the rankings of dataset's markers over the cell types
+Highlight that our metamarkers are the most consistent performing over all the celltypes
+```{r}
+nProg_order$rank = c(1:nrow(nProg_order))
+intProg_order$rank = c(1:nrow(intProg_order))
+gaba_order$rank = c(1:nrow(gaba_order))
+glut_order$rank = c(1:nrow(glut_order))
+nonN_order$rank = c(1:nrow(nonN_order))
+
+rank_marker_df = rbind(nProg_order,intProg_order, gaba_order, glut_order, nonN_order )
+
+rank_order_df = rank_marker_df %>% group_by(Var2) %>% summarize(median = median(rank)) %>% arrange(median)
+rank_marker_df$Var2 = factor(rank_marker_df$Var2, levels = rank_order_df$Var2)
+
+meta_marker_color = rep('Individual dataset markers', length = nrow(rank_marker_df))
+meta_marker_color[rank_marker_df$Var2=='MetaMarkers'] = 'MetaMarkers'
+
+rank_marker_df$color_vec = meta_marker_color
+
+ggplot(rank_marker_df, aes(x = Var2, y = rank, color = color_vec)) + geom_boxplot() +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  ylab('Ranked auroc performance over all cell-types') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'rankedCelltypes_fetal_1v1_all_fetal_boxplots.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+
+
+ggplot(rank_marker_df, aes(y = Var2, x = rank, color = color_vec)) + geom_boxplot() +
+  scale_color_manual(values = c('Individual dataset markers' = 'black', 'MetaMarkers' = 'red')) +
+  ylab('Ranked auroc performance over all cell-types') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'rankedCelltypes_fetal_1v1_all_fetal_boxplots_rotated.pdf', 
+path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/fetal_1v1/', 
+device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+```
+
+
+
+
+
+
+Get violin plots of the expression of the aggregate markers. 
+
+```{r}
+
+agg_exp_df = data.frame(dataset = c(), metaMarker_set = c(), class_label = c(), agg_exp = c())
+
+for(i in 1:length(human_fetal_dataset_names)){
+
+  start = Sys.time()
+  #Load up dataset
+  current_dataset = human_fetal_dataset_names[i]
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset_batch1, poliodakis_dataset_batch2, GW14_merged_dataset, 
+                      GW17_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset, GW19_2_merged_dataset,
+                      poliodakis_dataset_batch1, poliodakis_dataset_batch2,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset, seurat_object))
+  gc()
+  #Metamarkers excluding that dataset
+  test_dataset_name = names(test_markers[i])
+  temp_test_markers = test_markers[names(test_markers) != test_dataset_name]
+  agg_de_stats = make_meta_markers(temp_test_markers, detailed_stats = T)
+  
+  #Top markers
+  gaba_markers_all = get_celltype_ranked_markers(agg_de_stats, 'GABAergic',100, 'rank')
+  glut_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Glutamatergic',100, 'rank')
+  nProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Neural_Progenitor',100, 'rank')
+  nonN_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Non-neuronal',100, 'rank')
+  divProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Dividing_Progenitor',100, 'rank')
+  intProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Intermediate_Progenitor',100, 'rank')
+
+    #Get the unique sets per celltype
+  intProg_markers = intProg_markers_all$gene[!intProg_markers_all$gene %in% 
+                                                   c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  nProg_markers = nProg_markers_all$gene[!nProg_markers_all$gene %in% 
+                                               c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, intProg_markers_all$gene, divProg_markers_all$gene)]
+  divProg_markers = divProg_markers_all$gene[!divProg_markers_all$gene %in% 
+                                                   c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, intProg_markers_all$gene)]
+  glut_markers = glut_markers_all$gene[!glut_markers_all$gene %in% 
+                                             c(gaba_markers_all$gene, intProg_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  gaba_markers = gaba_markers_all$gene[!gaba_markers_all$gene %in% 
+                                             c(intProg_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  nonN_markers = nonN_markers_all$gene[!nonN_markers_all$gene %in% 
+                                             c(gaba_markers_all$gene, glut_markers_all$gene, intProg_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  
+  print(sprintf('Num gaba markers: %i', length(gaba_markers)))
+  print(sprintf('Num glut markers: %i', length(glut_markers)))
+  print(sprintf('Num nonN markers: %i', length(nonN_markers)))
+  print(sprintf('Num nProg markers: %i', length(nProg_markers)))
+  print(sprintf('Num intProg markers: %i', length(intProg_markers)))
+  print(sprintf('Num divProg markers: %i', length(divProg_markers)))
+  
+  num_cells = ncol(dataset)
+  #Annotations of the cell type
+  cell_label_vec = rep(as.character(dataset$labeled_classes), times = 6)
+  #MetaMarker set annotation
+  marker_set_vec = c(rep('agg_gaba_exp', length = num_cells), rep('agg_glut_exp', length = num_cells), rep('agg_nonN_exp', length = num_cells),
+                     rep('agg_nProg_exp', length = num_cells), rep('agg_divProg_exp', length = num_cells), rep('agg_intProg_exp', length = num_cells))
+  #Aggregate expression
+  agg_exp_vec = c(rowMeans(FetchData(dataset, gaba_markers)), rowMeans(FetchData(dataset, glut_markers)), rowMeans(FetchData(dataset, nonN_markers)),
+                  rowMeans(FetchData(dataset, nProg_markers)), rowMeans(FetchData(dataset, divProg_markers)), rowMeans(FetchData(dataset, intProg_markers)))
+  #Dataset label
+  dataset_vec = rep(sprintf('Fetal dataset %i', i), length = length(agg_exp_vec))
+
+  
+  temp_df = data.frame(dataset = dataset_vec, metaMarker_set = marker_set_vec, class_label = cell_label_vec, agg_exp = agg_exp_vec)
+
+  agg_exp_df = rbind(agg_exp_df, temp_df)
+  
+  end = Sys.time()
+  print(sprintf('Done with %i datasets...', i))
+  print(end - start)
+
+} 
+agg_exp_df
+```
+
+
+
+```{r}
+save(agg_exp_df , 
+     file = 'fetal_metaMarker_cross_validation/6_26_24/cross_dataset_aggregated_exp_metaMarker_all_fetal.Rdata')
+```
+
+
+```{r}
+load(file = 'fetal_metaMarker_cross_validation/6_26_24/cross_dataset_aggregated_exp_metaMarker_all_fetal.Rdata')
+```
+
+
+
+
+
+```{r}
+
+dataset_color_vec = c('Fetal dataset 1' = 'grey','Fetal dataset 2' = 'grey','Fetal dataset 3' = 'grey','Fetal dataset 4' = 'grey','Fetal dataset 5' = 'grey',
+                      'Fetal dataset 6' = 'grey','Fetal dataset 7' = 'grey','Fetal dataset 8' = 'grey','Fetal dataset 9' = 'grey','Fetal dataset 10' = 'grey', 
+                      'Fetal dataset 11' = 'grey', 'Fetal dataset 12' = 'grey','Fetal dataset 13' = 'grey','Fetal dataset 14' = 'grey','Fetal dataset 15' = 'grey',
+                      'Fetal dataset 16' = 'grey','Fetal dataset 17' = 'grey','Fetal dataset 18' = 'grey','Fetal dataset 19' = 'grey','Fetal dataset 20' = 'grey','Fetal dataset 21' = 'grey',
+                      'Fetal dataset 22' = 'grey','Fetal dataset 23' = 'grey','Fetal dataset 24' = 'grey','Fetal dataset 25' = 'grey','Fetal dataset 26' = 'grey','Fetal dataset 27' = 'grey',
+                      'Fetal dataset 28' = 'grey','Fetal dataset 29' = 'grey','Fetal dataset 30' = 'grey','Fetal dataset 31' = 'grey','Fetal dataset 32' = 'grey','Fetal dataset 33' = 'grey',
+                      'Fetal dataset 34' = 'grey','Fetal dataset 35' = 'grey','Fetal dataset 36' = 'grey','Fetal dataset 37' = 'grey')
+
+
+gaba_order = filter(agg_exp_df, metaMarker_set == 'agg_gaba_exp' & class_label == 'GABAergic') %>% group_by(dataset) %>% 
+  summarize(mean_exp = mean(agg_exp)) %>% arrange(mean_exp)
+
+just_gaba_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_gaba_exp')
+just_gaba_agg_df$dataset = factor(just_gaba_agg_df$dataset, levels = gaba_order$dataset)
+
+ggplot(just_gaba_agg_df, aes(x = class_label, y = agg_exp, color = dataset, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_color_manual(values = dataset_color_vec, guide = 'none') + scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 GABAergic MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_gaba_metaMarkers_avg_exp_all_fetal.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 6, width = 15)
+
+
+glut_order = filter(agg_exp_df, metaMarker_set == 'agg_glut_exp' & class_label == 'Glutamatergic') %>% group_by(dataset) %>% 
+  summarize(mean_exp = mean(agg_exp)) %>% arrange(mean_exp)
+
+just_glut_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_glut_exp')
+just_glut_agg_df$dataset = factor(just_glut_agg_df$dataset, levels = glut_order$dataset)
+
+ggplot(just_glut_agg_df, aes(x = class_label, y = agg_exp, color = dataset, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_color_manual(values = dataset_color_vec, guide = 'none') + scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Glutamatergic MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_glut_metaMarkers_avg_exp_all_fetal.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 6, width = 15)
+
+
+nonN_order = filter(agg_exp_df, metaMarker_set == 'agg_nonN_exp' & class_label == 'Non-neuronal') %>% group_by(dataset) %>% 
+  summarize(mean_exp = mean(agg_exp)) %>% arrange(mean_exp)
+
+just_nonN_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_nonN_exp')
+just_nonN_agg_df$dataset = factor(just_nonN_agg_df$dataset, levels = nonN_order$dataset)
+
+ggplot(just_nonN_agg_df, aes(x = class_label, y = agg_exp, color = dataset, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_color_manual(values = dataset_color_vec, guide = 'none') + scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Non-neuronal MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_nonN_metaMarkers_avg_exp_all_fetal.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 6, width = 15)
+
+
+nProg_order = filter(agg_exp_df, metaMarker_set == 'agg_nProg_exp' & class_label == 'Neural_Progenitor') %>% group_by(dataset) %>% 
+  summarize(mean_exp = mean(agg_exp)) %>% arrange(mean_exp)
+
+just_nProg_agg_df = filter(agg_exp_df,!class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_nProg_exp')
+just_nProg_agg_df$dataset = factor(just_nProg_agg_df$dataset, levels = nProg_order$dataset)
+
+ggplot(just_nProg_agg_df, aes(x = class_label, y = agg_exp, color = dataset, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_color_manual(values = dataset_color_vec, guide = 'none') + scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Neural Progenitors MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_nProg_metaMarkers_avg_exp_all_fetal.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 6, width = 15)
+
+
+intProg_order = filter(agg_exp_df, metaMarker_set == 'agg_intProg_exp' & class_label == 'Intermediate_Progenitor') %>% 
+  group_by(dataset) %>% 
+  summarize(mean_exp = mean(agg_exp)) %>% arrange(mean_exp)
+
+just_intProg_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_intProg_exp')
+just_intProg_agg_df$dataset = factor(just_intProg_agg_df$dataset, levels = intProg_order$dataset)
+
+ggplot(just_intProg_agg_df, aes(x = class_label, y = agg_exp, color = dataset, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_color_manual(values = dataset_color_vec, guide = 'none') + scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Intermediate Progenitors MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_intProg_metaMarkers_avg_exp_all_fetal.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 6, width = 15)
+
+
+divProg_order = filter(agg_exp_df, metaMarker_set == 'agg_divProg_exp' & class_label == 'Dividing_Progenitor') %>% 
+  group_by(dataset) %>% 
+  summarize(mean_exp = mean(agg_exp)) %>% arrange(mean_exp)
+
+just_divProg_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_divProg_exp')
+just_divProg_agg_df$dataset = factor(just_divProg_agg_df$dataset, levels = divProg_order$dataset)
+
+ggplot(just_divProg_agg_df, aes(x = class_label, y = agg_exp, color = dataset, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_color_manual(values = dataset_color_vec, guide = 'none') + scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Dividing Progenitors MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_divProg_metaMarkers_avg_exp_all_fetal.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 6, width = 15)
+
+```
+
+
+And try lumping exp values per celltype over all datasets
+
+
+```{r}
+
+
+just_glut_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune')& metaMarker_set == 'agg_glut_exp')
+ggplot(just_glut_agg_df, aes(x = class_label, y = agg_exp, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Glutamatergic MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_glut_metaMarkers_avg_exp_all_fetal_lumped.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+just_gaba_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_gaba_exp')
+ggplot(just_gaba_agg_df, aes(x = class_label, y = agg_exp, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 GABAergic MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_gaba_metaMarkers_avg_exp_all_fetal_lumped.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+just_nonN_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_nonN_exp')
+ggplot(just_nonN_agg_df, aes(x = class_label, y = agg_exp, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Non-neuronal MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_nonN_metaMarkers_avg_exp_all_fetal_lumped.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+just_intProg_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_intProg_exp')
+ggplot(just_intProg_agg_df, aes(x = class_label, y = agg_exp, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Intermediate Progenitor MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_intProg_metaMarkers_avg_exp_all_fetal_lumped.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+just_divProg_agg_df = filter(agg_exp_df, !class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_divProg_exp')
+ggplot(just_divProg_agg_df, aes(x = class_label, y = agg_exp, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Dividing Progenitor MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_divProg_metaMarkers_avg_exp_all_fetal_lumped.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+just_nProg_agg_df = filter(agg_exp_df,!class_label %in% c('other', 'Microglia/Immune') & metaMarker_set == 'agg_nProg_exp')
+ggplot(just_nProg_agg_df, aes(x = class_label, y = agg_exp, fill = class_label)) + 
+  geom_violin(scale = 'width') + facet_wrap(~metaMarker_set) +
+  scale_fill_manual(values = fetal_class_palette) +
+  ylab('Top 100 Neural Progenitor MetaMarkers (CPM)') +
+  theme(axis.text.x = element_text(angle = 90))
+ggsave(filename = 'top_100_nProg_metaMarkers_avg_exp_all_fetal_lumped.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+```
+Get a plot explaining the neural progenitor and non-neuronal overlap
+
+```{r}
+
+all_annotations = c()
+all_labeled_classes = c()
+all_avg_nProg_exp = c()
+
+for(i in 1:length(human_fetal_dataset_names)){
+
+  start = Sys.time()
+  #Load up dataset
+  current_dataset = human_fetal_dataset_names[i]
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset_batch1, poliodakis_dataset_batch2, GW14_merged_dataset, 
+                      GW17_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset, GW19_2_merged_dataset,
+                      poliodakis_dataset_batch1, poliodakis_dataset_batch2,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset, seurat_object))
+  gc()
+  #Metamarkers excluding that dataset
+  test_dataset_name = names(test_markers[i])
+  temp_test_markers = test_markers[names(test_markers) != test_dataset_name]
+  agg_de_stats = make_meta_markers(temp_test_markers, detailed_stats = T)
+  
+  dataset_annotations = c()
+  #Get the cell-type annotations, from the authors not the large grouped annotations
+  if(i %in% c(1:26)){ #Linnarsson datasets
+    dataset_annotations = dataset$cell_class
+  }else if(i %in% c(27, 30:36)){ #Kreigstein datasets
+    dataset_annotations = dataset$cell.type
+  }else if(i %in% c(28, 29)){ #Poliodakis datasets
+    dataset_annotations = dataset$Cluster
+  }else{ #Fan fu datasets
+    dataset_annotations = dataset$type
+  }
+  
+  fetal_nProg_agg_markers = c()
+  #Top markers
+  nProg_markers = get_celltype_ranked_markers(agg_de_stats, 'Neural_Progenitor',100, 'rank')
+  #Get the aggregate Neural progenitor marker expression
+  fetal_nProg_agg_markers = rowMeans(FetchData(dataset, nProg_markers$gene))
+
+  all_annotations = c(all_annotations, dataset_annotations)
+  all_avg_nProg_exp = c(all_avg_nProg_exp, fetal_nProg_agg_markers )
+  all_labeled_classes = c(all_labeled_classes, dataset$labeled_classes)
+  end = Sys.time()
+  print(sprintf('Done with %i datasets...', i))
+  print(end - start)
+  
+}
+
+
+nProg_cell_type_df = data.frame(author_annotations = all_annotations,labeled_classes = all_labeled_classes, avg_nProg_exp = all_avg_nProg_exp)
+
+ggplot(nProg_cell_type_df, aes(x = author_annotations, y = avg_nProg_exp)) + geom_violin(scale = 'width') +
+  theme(axis.text.x = element_text(angle = 90))
+
+names(table(nProg_cell_type_df$author_annotations))
+
+#Group them a bit better so it's clear the astrocytes are the main off target expression
+#Just show the radial glia and the non-neuronal cell types
+grouped_annotations = nProg_cell_type_df$author_annotations
+grouped_annotations[grouped_annotations %in% c('Astro','Astrocyte', 'Glioblast')] = 'Astrocyte'
+grouped_annotations[grouped_annotations != 'Astrocyte' & nProg_cell_type_df$labeled_classes == 'Non-neuronal'] = 'All other Non-neuronal cell-types'
+grouped_annotations[nProg_cell_type_df$labeled_classes == 'Neural_Progenitor'] = 'Neural_Progenitor'
+
+nProg_cell_type_df$grouped_annotations = grouped_annotations
+
+ggplot(filter(nProg_cell_type_df, grouped_annotations %in% c('Astrocyte','All other Non-neuronal cell-types','Neural_Progenitor')), 
+       aes(x = grouped_annotations, y = avg_nProg_exp)) + geom_violin(scale = 'width') +
+  theme(axis.text.x = element_text(angle = 90))
+
+ggsave(filename = 'nonN_subtype_astrocyte_violins.pdf', 
+       path = 'graphs/fetal_metaMarker_cross_validation/6_26_24/agg_violin_metamarker/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+```
+
+
+
+
+
+
+####################
+Get the average CPM of the fetal MetaMarkers but stratify by region
+Showing the MetaMarkers are markers across the different sampled brain regions
+Just use the Arealization dataset since they sample across the different brain regions
+
+################
+
+
+```{r}
+
+
+secondTri_human_fetal_dataset_names = c( 'areal_GW14','areal_GW18_2','areal_GW19','areal_GW19_2',
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25')
+
+secondTri_human_fetal_dataset_paths = list(
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata')
+
+
+names(secondTri_human_fetal_dataset_paths)= secondTri_human_fetal_dataset_names 
+
+```
+
+
+
+```{r}
+
+all_structures = c()
+
+for(i in 1:length(secondTri_human_fetal_dataset_names)){
+  
+  #Load up dataset
+  current_dataset = secondTri_human_fetal_dataset_names[i]
+  x = load(secondTri_human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset_batch1, poliodakis_dataset_batch2, GW14_merged_dataset, 
+                      GW18_2_merged_dataset, GW19_merged_dataset, GW19_2_merged_dataset,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset))
+  gc()
+
+  all_structures = c(all_structures, names(table(dataset$structure)))
+
+}
+
+
+all_structures = unique(all_structures)
+all_structures
+
+
+```
+
+```{r}
+all_structures = c("GE", "hypothalamus","neocortex","striatum","thalamus","allocortex","claustrum", "cerebellum","midbrain","proneocortex")
+```
+
+
+```{r}
+all_class_types = c('Glutamatergic','GABAergic','Non-neuronal','Neural_Progenitor','Dividing_Progenitor','Intermediate_Progenitor')
+region_columns = sapply(all_structures, FUN = paste, all_class_types, sep = '_' )
+all_class_types
+region_columns
+region_columns[ ,'GE']
+```
+
+
+
+
+```{r}
+
+matrix_list = list()
+
+for(i in 1:length(secondTri_human_fetal_dataset_names)){
+
+  #Load up dataset
+  current_dataset = secondTri_human_fetal_dataset_names[i]
+  x = load(secondTri_human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset_batch1, poliodakis_dataset_batch2, GW14_merged_dataset, 
+                      GW17_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset))
+  gc()
+  #Metamarkers excluding that dataset
+  temp_test_markers = test_markers[names(test_markers) != current_dataset]
+  agg_de_stats = make_meta_markers(temp_test_markers, detailed_stats = T)
+  
+  #Top markers
+  gaba_markers_all = get_celltype_ranked_markers(agg_de_stats, 'GABAergic',100, 'rank')
+  glut_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Glutamatergic',100, 'rank')
+  nProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Neural_Progenitor',100, 'rank')
+  nonN_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Non-neuronal',100, 'rank')
+  divProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Dividing_Progenitor',100, 'rank')
+  intProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Intermediate_Progenitor',100, 'rank')
+
+  #Get the unique sets per celltype
+  intProg_markers = intProg_markers_all$gene[!intProg_markers_all$gene %in% 
+                                                   c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  nProg_markers = nProg_markers_all$gene[!nProg_markers_all$gene %in% 
+                                               c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, intProg_markers_all$gene, divProg_markers_all$gene)]
+  divProg_markers = divProg_markers_all$gene[!divProg_markers_all$gene %in% 
+                                                   c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, intProg_markers_all$gene)]
+  glut_markers = glut_markers_all$gene[!glut_markers_all$gene %in% 
+                                             c(gaba_markers_all$gene, intProg_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  gaba_markers = gaba_markers_all$gene[!gaba_markers_all$gene %in% 
+                                             c(intProg_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  nonN_markers = nonN_markers_all$gene[!nonN_markers_all$gene %in% 
+                                             c(gaba_markers_all$gene, glut_markers_all$gene, intProg_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+
+  #Put all in a list
+  marker_list = list(glut_markers, gaba_markers, nonN_markers, nProg_markers, divProg_markers, intProg_markers)
+  
+  #Make an empty matrix, celltypes for rows, celltype and region as columns
+  #Filling in the average expression of the marker set for the celltype within each region
+  dataset_region_matrix = matrix(0,nrow = length(all_class_types), ncol = length(region_columns), dimnames = list(all_class_types, region_columns))
+  #Setting NA for any regions that are missing a cell type
+  missing_celltypes = all_class_types[!all_class_types %in% names(table(dataset$labeled_classes))]
+  missing_regions = all_structures[!all_structures %in% names(table(dataset$structure))]
+  missing_region_names = region_columns[grepl(paste(missing_regions,collapse='|'), region_columns)]
+  
+  dataset_region_matrix[rownames(dataset_region_matrix) %in% missing_celltypes,  ] = NA
+  dataset_region_matrix[ ,colnames(dataset_region_matrix) %in% missing_region_names  ] = NA
+  
+  #For each cell type, get the average expression of each cell type marker set for the cells in each region
+  for(row in 1:length(all_class_types)){
+    
+    for(j in 1:length(all_class_types)){
+      column_index = which(grepl(all_class_types[j], region_columns))
+      
+      for(k in 1:length(column_index)){
+        
+        num_cells = sum(dataset$labeled_classes == all_class_types[row] & dataset$structure == all_structures[k])
+        if(num_cells == 0){next}
+        else if(!is.na(dataset_region_matrix[row,column_index[k]])){
+    
+          dataset_region_matrix[row,column_index[k]] = mean(rowMeans(dataset[rownames(dataset) %in% marker_list[[j]] , 
+                                                             dataset$labeled_classes == all_class_types[row] & dataset$structure == all_structures[k]]@assays$RNA@data))
+        }
+      }
+    }
+  }
+
+  #Add dataset names to the rows and save the dataset matrix tp combine later
+  rownames(dataset_region_matrix) = paste(current_dataset,rownames(dataset_region_matrix), sep = '_')
+  
+  #Normalize to the max of each row
+  col_maxes = apply(dataset_region_matrix, 2, max, na.rm = T)
+  dataset_region_matrix = sweep(dataset_region_matrix, 2, col_maxes, FUN = '/')
+  matrix_list[[i]] = dataset_region_matrix 
+ 
+  print(i)
+}
+
+
+
+
+
+```
+
+
+```{r}
+class_palette = met.brewer("Archambault", 20)
+class_palette
+
+structure_palette = met.brewer("Demuth", 10)
+structure_palette
+
+celltype_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 'Glutamatergic' = class_palette[14], 'Neural_Progenitor' = class_palette[4], 
+                  'Dividing_Progenitor' = class_palette[10], 'Intermediate_Progenitor' = class_palette[16], 
+                  'other' = 'grey')
+
+structure_palette = c('GE' = structure_palette[1], 'hypothalamus' = structure_palette[2], 'neocortex' = structure_palette[3], 'striatum' = structure_palette[4], 
+                      'thalamus' = structure_palette[5],
+                      'allocortex' = structure_palette[6], 'claustrum' = structure_palette[7], 'cerebellum' = structure_palette[8], 'midbrain' = structure_palette[9], 
+                      'proneocortex' = structure_palette[10])
+```
+
+
+
+
+all_class_types = c('Glutamatergic','GABAergic','Non-neuronal','Neural_Progenitor','Dividing_Progenitor','Intermediate_Progenitor')
+
+```{r}
+
+for(i in 1:length(secondTri_human_fetal_dataset_names )){
+  
+  current_dataset = secondTri_human_fetal_dataset_names[i]
+  test_single = matrix_list[[i]]
+  #Drop the NA celltypes and sturctures
+  keep_rows = which(rowSums(!is.na(test_single)) != 0)
+  keep_columns = which(colSums(!is.na(test_single)) != 0)
+  test_single = test_single[keep_rows, keep_columns]
+  
+  
+  col_index = c(which(grepl('Glutamatergic', colnames(test_single))), which(grepl('GABAergic', colnames(test_single))), 
+    which(grepl('Non-neuronal', colnames(test_single))), which(grepl('Neural_Progenitor', colnames(test_single))),
+    which(grepl('Dividing_Progenitor', colnames(test_single))), which(grepl('Intermediate_Progenitor', colnames(test_single))))
+  
+  test_single = test_single[ ,col_index]
+  
+  
+  #Celltype and structure annotations
+  class_row_vec = vector(mode = 'character', length = nrow(test_single))
+  class_row_vec[grepl('Non-neuronal',rownames(test_single))] = 'Non-neuronal'
+  class_row_vec[grepl('GABAergic',rownames(test_single))] = 'GABAergic'
+  class_row_vec[grepl('Glutamatergic',rownames(test_single))] = 'Glutamatergic'
+  class_row_vec[grepl('Neural_Progenitor',rownames(test_single))] = 'Neural_Progenitor'
+  class_row_vec[grepl('Dividing_Progenitor',rownames(test_single))] = 'Dividing_Progenitor'
+  class_row_vec[grepl('Intermediate_Progenitor',rownames(test_single))] = 'Intermediate_Progenitor'
+  
+  class_col_vec = vector(mode = 'character', length = ncol(test_single))
+  class_col_vec[grepl('Non-neuronal',colnames(test_single))] = 'Non-neuronal'
+  class_col_vec[grepl('GABAergic',colnames(test_single))] = 'GABAergic'
+  class_col_vec[grepl('Glutamatergic',colnames(test_single))] = 'Glutamatergic'
+  class_col_vec[grepl('Neural_Progenitor',colnames(test_single))] = 'Neural_Progenitor'
+  class_col_vec[grepl('Dividing_Progenitor',colnames(test_single))] = 'Dividing_Progenitor'
+  class_col_vec[grepl('Intermediate_Progenitor',colnames(test_single))] = 'Intermediate_Progenitor'
+  
+  structure_col_vec = vector(mode = 'character', length = ncol(test_single))
+  structure_col_vec[grepl('GE',colnames(test_single))] = 'GE'
+  structure_col_vec[grepl('hypothalamus',colnames(test_single))] = 'hypothalamus'
+  structure_col_vec[grepl('neocortex',colnames(test_single))] = 'neocortex'
+  structure_col_vec[grepl('striatum',colnames(test_single))] = 'striatum'
+  structure_col_vec[grepl('thalamus',colnames(test_single))] = 'thalamus'
+  structure_col_vec[grepl('allocortex',colnames(test_single))] = 'allocortex'
+  structure_col_vec[grepl('claustrum',colnames(test_single))] = 'claustrum'
+  structure_col_vec[grepl('cerebellum',colnames(test_single))] = 'cerebellum'
+  structure_col_vec[grepl('midbrain',colnames(test_single))] = 'midbrain'
+  structure_col_vec[grepl('proneocortex',colnames(test_single))] = 'proneocortex'
+  
+  
+  top_ha = HeatmapAnnotation(celltype_markers = class_col_vec, structure = structure_col_vec, 
+                         col = list(celltype_markers = celltype_palette, structure = structure_palette))
+  row_ha = rowAnnotation(celltypes = class_row_vec, 
+                         col = list(celltypes = celltype_palette))
+  file_path = sprintf('graphs/fetal_metaMarker_cross_validation/6_26_24/regional_marker_exp/%s_regional_exp_heatmap_v2.pdf', current_dataset)
+  pdf(file = file_path, useDingbats = F, height = 4, width = 8)
+  h = Heatmap(test_single, name = 'max avg. expression',
+          top_annotation = top_ha, left_annotation = row_ha, show_column_names = F, cluster_rows = F, cluster_columns = F)
+  draw(h)
+  dev.off()
+  draw(h)
+
+
+}
+```
+
+
+```{r}
+
+save(matrix_list, file = '../data/regional_marker_exp/6_26_24/areal_dataset_regional_marker_exp_matrices.Rdata')
+
+
+
+```
+
+
+
+And now for the first trimester datasets
+
+
+
+```{r}
+
+firstTri_human_fetal_dataset_names = c( 
+                               'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
+                               'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
+                               'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
+                               'linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2',
+                               'linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13', 'linnarsson_GW14')
+
+firstTri_human_fetal_dataset_paths = list(
+                                 '../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata')
+
+names(firstTri_human_fetal_dataset_paths)= firstTri_human_fetal_dataset_names 
+
+```
+
+```{r}
+all_structures = c('Brain','Cerebellum','Diencephalon','Forebrain','Head', 'Hindbrain','Medulla','Midbrain','Pons','Telencephalon' )
+
+
+```
+
+
+```{r}
+all_class_types = c('Glutamatergic','GABAergic','Non-neuronal','Neural_Progenitor','Dividing_Progenitor','Intermediate_Progenitor')
+region_columns = sapply(all_structures, FUN = paste, all_class_types, sep = '_' )
+all_class_types
+region_columns
+
+```
+
+
+```{r}
+
+matrix_list = list()
+
+for(i in 1:length(firstTri_human_fetal_dataset_names)){
+
+  start = Sys.time()
+  #Load up dataset
+  current_dataset = firstTri_human_fetal_dataset_names[i]
+  x = load(firstTri_human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, seurat_object))
+  gc()
+  #Metamarkers excluding that dataset
+  temp_test_markers = test_markers[names(test_markers) != current_dataset]
+  agg_de_stats = make_meta_markers(temp_test_markers, detailed_stats = T)
+  
+  #Top markers
+  gaba_markers_all = get_celltype_ranked_markers(agg_de_stats, 'GABAergic',100, 'rank')
+  glut_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Glutamatergic',100, 'rank')
+  nProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Neural_Progenitor',100, 'rank')
+  nonN_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Non-neuronal',100, 'rank')
+  divProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Dividing_Progenitor',100, 'rank')
+  intProg_markers_all = get_celltype_ranked_markers(agg_de_stats, 'Intermediate_Progenitor',100, 'rank')
+
+  #Get the unique sets per celltype
+  intProg_markers = intProg_markers_all$gene[!intProg_markers_all$gene %in% 
+                                                   c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  nProg_markers = nProg_markers_all$gene[!nProg_markers_all$gene %in% 
+                                               c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, intProg_markers_all$gene, divProg_markers_all$gene)]
+  divProg_markers = divProg_markers_all$gene[!divProg_markers_all$gene %in% 
+                                                   c(gaba_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, intProg_markers_all$gene)]
+  glut_markers = glut_markers_all$gene[!glut_markers_all$gene %in% 
+                                             c(gaba_markers_all$gene, intProg_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  gaba_markers = gaba_markers_all$gene[!gaba_markers_all$gene %in% 
+                                             c(intProg_markers_all$gene, glut_markers_all$gene, nonN_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+  nonN_markers = nonN_markers_all$gene[!nonN_markers_all$gene %in% 
+                                             c(gaba_markers_all$gene, glut_markers_all$gene, intProg_markers_all$gene, nProg_markers_all$gene, divProg_markers_all$gene)]
+
+  #Put all in a list
+  marker_list = list(glut_markers, gaba_markers, nonN_markers, nProg_markers, divProg_markers, intProg_markers)
+  
+  #Make an empty matrix, celltypes for rows, celltype and region as columns
+  #Filling in the average expression of the marker set for the celltype within each region
+  dataset_region_matrix = matrix(0,nrow = length(all_class_types), ncol = length(region_columns), dimnames = list(all_class_types, region_columns))
+  #Setting NA for any regions that are missing a cell type
+  missing_celltypes = all_class_types[!all_class_types %in% names(table(dataset$labeled_classes))]
+  missing_regions = all_structures[!all_structures %in% names(table(dataset$region))]
+  missing_region_names = region_columns[grepl(paste(missing_regions,collapse='|'), region_columns)]
+  
+  dataset_region_matrix[rownames(dataset_region_matrix) %in% missing_celltypes,  ] = NA
+  dataset_region_matrix[ ,colnames(dataset_region_matrix) %in% missing_region_names  ] = NA
+  
+  #For each cell type, get the average expression of each cell type marker set for the cells in each region
+  for(row in 1:length(all_class_types)){
+    
+    for(j in 1:length(all_class_types)){
+      column_index = which(grepl(all_class_types[j], region_columns))
+      
+      for(k in 1:length(column_index)){
+        
+        num_cells = sum(dataset$labeled_classes == all_class_types[row] & dataset$region == all_structures[k])
+        if(num_cells == 0){next}
+        else if(!is.na(dataset_region_matrix[row,column_index[k]])){
+    
+          dataset_region_matrix[row,column_index[k]] = mean(rowMeans(dataset[rownames(dataset) %in% marker_list[[j]] , 
+                                                             dataset$labeled_classes == all_class_types[row] & dataset$region == all_structures[k]]@assays$RNA@data))
+        }
+      }
+    }
+  }
+
+  #Add dataset names to the rows and save the dataset matrix tp combine later
+  rownames(dataset_region_matrix) = paste(current_dataset,rownames(dataset_region_matrix), sep = '_')
+  
+  #Normalize to the max of each row
+  col_maxes = apply(dataset_region_matrix, 2, max, na.rm = T)
+  dataset_region_matrix = sweep(dataset_region_matrix, 2, col_maxes, FUN = '/')
+  matrix_list[[i]] = dataset_region_matrix 
+ 
+  end = Sys.time()
+  print(sprintf("Done with %i datasets...", i))
+  print(end - start)
+}
+
+
+
+
+
+```
+
+
+
+
+```{r}
+class_palette = met.brewer("Archambault", 20)
+class_palette
+
+structure_palette = met.brewer("Demuth", 10)
+structure_palette
+
+celltype_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 'Glutamatergic' = class_palette[14], 'Neural_Progenitor' = class_palette[4], 
+                  'Dividing_Progenitor' = class_palette[10], 'Intermediate_Progenitor' = class_palette[16], 
+                  'other' = 'grey')
+
+structure_palette = c('Brain' = structure_palette[1], 'Cerebellum' = structure_palette[2], 'Diencephalon' = structure_palette[3], 'Forebrain' = structure_palette[4], 
+                      'Head' = structure_palette[5],
+                      'Hindbrain' = structure_palette[6], 'Medulla' = structure_palette[7], 'Midbrain' = structure_palette[8], 'Pons' = structure_palette[9], 
+                      'Telencephalon' = structure_palette[10])
+```
+
+
+
+```{r}
+
+for(i in 1:length(firstTri_human_fetal_dataset_names )){
+  
+  current_dataset = firstTri_human_fetal_dataset_names[i]
+  test_single = matrix_list[[i]]
+  #Drop the NA celltypes and sturctures
+  keep_rows = which(rowSums(!is.na(test_single)) != 0)
+  keep_columns = which(colSums(!is.na(test_single)) != 0)
+  test_single = test_single[keep_rows, keep_columns]
+  
+  
+  col_index = c(which(grepl('Glutamatergic', colnames(test_single))), which(grepl('GABAergic', colnames(test_single))), 
+    which(grepl('Non-neuronal', colnames(test_single))), which(grepl('Neural_Progenitor', colnames(test_single))),
+    which(grepl('Dividing_Progenitor', colnames(test_single))), which(grepl('Intermediate_Progenitor', colnames(test_single))))
+  
+  test_single = test_single[ ,col_index]
+  
+  
+  #Celltype and structure annotations
+  class_row_vec = vector(mode = 'character', length = nrow(test_single))
+  class_row_vec[grepl('Non-neuronal',rownames(test_single))] = 'Non-neuronal'
+  class_row_vec[grepl('GABAergic',rownames(test_single))] = 'GABAergic'
+  class_row_vec[grepl('Glutamatergic',rownames(test_single))] = 'Glutamatergic'
+  class_row_vec[grepl('Neural_Progenitor',rownames(test_single))] = 'Neural_Progenitor'
+  class_row_vec[grepl('Dividing_Progenitor',rownames(test_single))] = 'Dividing_Progenitor'
+  class_row_vec[grepl('Intermediate_Progenitor',rownames(test_single))] = 'Intermediate_Progenitor'
+  
+  class_col_vec = vector(mode = 'character', length = ncol(test_single))
+  class_col_vec[grepl('Non-neuronal',colnames(test_single))] = 'Non-neuronal'
+  class_col_vec[grepl('GABAergic',colnames(test_single))] = 'GABAergic'
+  class_col_vec[grepl('Glutamatergic',colnames(test_single))] = 'Glutamatergic'
+  class_col_vec[grepl('Neural_Progenitor',colnames(test_single))] = 'Neural_Progenitor'
+  class_col_vec[grepl('Dividing_Progenitor',colnames(test_single))] = 'Dividing_Progenitor'
+  class_col_vec[grepl('Intermediate_Progenitor',colnames(test_single))] = 'Intermediate_Progenitor'
+  
+  structure_col_vec = vector(mode = 'character', length = ncol(test_single))
+  structure_col_vec[grepl('Brain',colnames(test_single))] = 'Brain'
+  structure_col_vec[grepl('Cerebellum',colnames(test_single))] = 'Cerebellum'
+  structure_col_vec[grepl('Diencephalon',colnames(test_single))] = 'Diencephalon'
+  structure_col_vec[grepl('Forebrain',colnames(test_single))] = 'Forebrain'
+  structure_col_vec[grepl('Head',colnames(test_single))] = 'Head'
+  structure_col_vec[grepl('Hindbrain',colnames(test_single))] = 'Hindbrain'
+  structure_col_vec[grepl('Medulla',colnames(test_single))] = 'Medulla'
+  structure_col_vec[grepl('Midbrain',colnames(test_single))] = 'Midbrain'
+  structure_col_vec[grepl('Pons',colnames(test_single))] = 'Pons'
+  structure_col_vec[grepl('Telencephalon',colnames(test_single))] = 'Telencephalon'
+  
+  top_ha = HeatmapAnnotation(celltype_markers = class_col_vec, structure = structure_col_vec, 
+                         col = list(celltype_markers = celltype_palette, structure = structure_palette))
+  row_ha = rowAnnotation(celltypes = class_row_vec, 
+                         col = list(celltypes = celltype_palette))
+  file_path = sprintf('graphs/fetal_metaMarker_cross_validation/6_26_24/regional_marker_exp/%s_regional_exp_heatmap_v2.pdf', current_dataset)
+  pdf(file = file_path, useDingbats = F, height = 4, width = 8)
+  h = Heatmap(test_single, name = 'max avg. expression',
+          top_annotation = top_ha, left_annotation = row_ha, show_column_names = F, cluster_rows = F, cluster_columns = F)
+  draw(h)
+  dev.off()
+  draw(h)
+
+
+}
+```
+
+
+```{r}
+
+save(matrix_list, file = '../data/regional_marker_exp/6_26_24/linnarsson_dataset_regional_marker_exp_matrices.Rdata')
+
+
+
+```
+
+
+
+
+

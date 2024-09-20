@@ -1,0 +1,856 @@
+
+
+Testing the adult brain coexpression  (MTG human data; https://www.biorxiv.org/content/10.1101/2022.09.19.508480v1.full.pdf)
+
+
+Get adult metamarkers and an adult coexpression network
+
+Test the conserved coexpression of the fetal and organoid neurons and non-neurons
+
+Compare against the fetal results
+
+Expecting performance to drop compared to the fetal, but if the results are highly correlated, suggests that an adult reference can still be used to score organoids
+Useful for organoid models that do not have a lot of exisiting comparable fetal data
+Means we could also theoretically use all the exisiting adult data
+
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/home/werner/projects/meta_qc_organoid/code')
+```
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(MetBrewer)
+library(ComplexHeatmap)
+library(reticulate)
+Sys.setenv(RETICULATE_PYTHON = "/usr/bin/python3.6")
+library(reticulate)
+np <- reticulate::import("numpy")
+library(parallel)
+```
+
+Now filter the networks to just include the go genes, same gene universe across all datasets/coexpression networks
+
+```{r}
+#library(org.Hs.eg.db)
+#library(EGAD)
+#library(AnnotationDbi)
+load('../../../data/go_annotations/go_annotations.Rdata')
+```
+
+
+```{r}
+human_class_path = '/data/fischer/biccn_markers/human/class_markers_top1000.csv.gz'
+human_subclass_path = '/data/fischer/biccn_markers/human/subclass_markers_top1000.csv.gz'
+human_type_path = '/data/fischer/biccn_markers/human/type_markers_top1000.csv.gz'
+
+human_class_markers = fread(human_class_path)
+
+human_subclass_markers = fread(human_subclass_path)
+
+human_type_markers = fread(human_type_path)
+```
+
+```{r}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+```
+
+
+```{r}
+
+table(human_class_markers$cell_type)
+filter(human_class_markers, rank <= 100 & cell_type == 'GABAergic')
+filter(human_class_markers, rank <= 100 & cell_type == 'Glutamatergic')
+filter(human_class_markers, rank <= 100 & cell_type == 'Non-neuronal')
+
+human_subclass_markers %>% filter(rank <= 10)
+
+adult_gaba = get_celltype_ranked_markers(human_class_markers, 'GABAergic', 100)$gene
+adult_glut = get_celltype_ranked_markers(human_class_markers, 'Glutamatergic', 100)$gene
+adult_nonN = get_celltype_ranked_markers(human_class_markers, 'Non-neuronal', 100)$gene
+
+#Trying astro and oliugo specific markers for adult
+adult_astro = get_celltype_ranked_markers(human_subclass_markers, 'Astro', 50)$gene
+adult_oligo = get_celltype_ranked_markers(human_subclass_markers, 'Oligo', 50)$gene
+adult_astro_oligo = c(adult_astro, adult_oligo)
+
+adult_gaba_go = adult_gaba[adult_gaba %in% go_genes]
+adult_glut_go = adult_glut[adult_glut %in% go_genes]
+adult_nonN_go = adult_nonN[adult_nonN %in% go_genes]
+adult_astro_oligo_go = adult_astro_oligo[adult_astro_oligo %in% go_genes]
+
+length(adult_gaba_go)
+length(adult_glut_go)
+length(adult_nonN_go)
+length(adult_astro_oligo)
+```
+
+
+load in the adult data
+
+
+```{r}
+
+
+load('../data/human_biccn/human_biccn_expression.Rdata')
+human_exp_data
+```
+
+
+Exclude the Endo, VLMC, Micro-PVM cell types from the Non-neuronal class
+
+```{r}
+
+human_exp_data$class[human_exp_data$subclass %in% c('Endo','Micro-PVM','VLMC')] = 'other'
+```
+
+
+
+```{r}
+
+table(human_exp_data$subclass[human_exp_data$class == 'Non-neuronal'])
+
+human_exp_data[[]]
+
+table(human_exp_data$orig.ident)
+
+median(human_exp_data$nFeature_RNA)
+
+table(human_exp_data$nFeature_RNA >= 200 & human_exp_data$nFeature_RNA <= 6000)
+
+human_exp_data[["percent.mt"]] <- PercentageFeatureSet(human_exp_data, pattern = "^MT-")
+
+median(human_exp_data$percent.mt)
+
+human_exp_data@assays$RNA@meta.features
+
+```
+
+
+```{r}
+
+hist(human_exp_data$nCount_RNA)
+hist(human_exp_data$nFeature_RNA)
+
+```
+
+
+Make a coexpression network
+
+```{r}
+source_python('python_coexpression.py')
+```
+
+
+
+
+```{r}
+start = Sys.time()
+
+dataset_genes = rownames(human_exp_data)
+#Filter for the GO gene universe
+dataset_genes_in_go = dataset_genes[dataset_genes %in% go_genes]
+dataset_genes_missing_from_go = go_genes[! go_genes %in% dataset_genes]
+#Subset the gene expression for the genes present in GO
+dataset_gene_index = dataset_genes %in% dataset_genes_in_go
+
+exp_data = as.matrix(human_exp_data@assays$RNA@data[dataset_gene_index, ])
+
+#Add zero counts for the missing GO genes
+go_missing = matrix(0, nrow = length(dataset_genes_missing_from_go), ncol = ncol(exp_data), 
+                    dimnames = list(dataset_genes_missing_from_go, colnames(exp_data)))
+exp_data = rbind(exp_data, go_missing)
+r_genes = rownames(exp_data)
+
+#Free up memory
+rm(human_exp_data)
+gc()
+
+
+
+
+#Get coexpression data
+test_py_exp = np$array(exp_data) #Turn R matrix into numpy array
+
+rm(exp_data, go_missing)
+gc()
+
+
+python_script_test = get_coexpression(test_py_exp, r_genes) #Python method for spearman correlations, coexpression
+corr_matrix = as.matrix(python_script_test) #Turn to matrix
+#Convert Nans to 0, these are genes with 0 expression in any cells
+corr_matrix[!is.finite(corr_matrix)] = 0
+  
+file_name = '../data/human_biccn/adult_brain_coexp.Rdata'
+save(corr_matrix, file = file_name)
+end = Sys.time()
+print(end - start)
+print(sprintf('Done getting coexpression from %i dataset...', i))
+
+
+#Rank the coexpression data
+#Rank everything, I want the minimum rank to be 1, so ties are minimum. Subtracting 1 sets the minimum rank to 0
+rank_corr = frank(c(corr_matrix), ties.method = 'min') - 1
+#Divide by max rank squeezes everything between 0 and 1
+norm_rank_corr = rank_corr / max(rank_corr)
+#Put back into a matrix
+rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(corr_matrix), ncol = ncol(corr_matrix), 
+                          dimnames = list(rownames(corr_matrix), colnames(corr_matrix)))
+diag(rank_corr_matrix) = 1
+
+file_name = '../data/human_biccn/ranked_adult_brain_coexp.Rdata'
+save(rank_corr_matrix, file =file_name)
+
+```
+
+
+
+
+
+```{r}
+load('../../../data/human_biccn/ranked_adult_brain_coexp.Rdata')
+adult_rank_corr_mat = rank_corr_matrix
+dim(adult_rank_corr_mat)
+```
+
+
+Test the conservation of coexpression using the adult ranked network as the reference
+
+```{r}
+compute_auc = function(scores, label){
+  label = as.logical(label)
+  n1 = as.numeric(sum(label))
+  n2 = as.numeric(sum(!label))
+  R1 = sum(rank(scores)[label])
+  U1 = R1 - n1 * (n1 + 1)/2
+  auc = U1/(n1 * n2)
+  return(auc)
+}
+
+
+#Compute ROC curve for plotting
+#Input is a list of true/false labels (celltype identity) ranked by some metric (gene expression). 
+roc_curve = function(ranked_labels){
+
+  #Get total number of positives and negatives
+  num_pos = sum(ranked_labels)
+  num_neg = sum(!ranked_labels)
+  num_total = length(ranked_labels)
+  #Cumulative sum of positives and negatives
+  tp = cumsum(ranked_labels)
+  fp = cumsum(!ranked_labels)
+  
+  fpr = fp/num_neg
+  tpr = tp/num_pos
+  
+  return(list('fpr' = fpr, 'tpr' = tpr))
+}
+
+get_conserved_coexp = function(network1, network2, test_gene, num_top = 10){
+
+  #Get the top 10 coexpressed genes
+  test_gene_coexp = network1[test_gene, ]
+  test_gene_coexp = test_gene_coexp[names(test_gene_coexp) != test_gene]
+  top_coexp = names(test_gene_coexp[order(test_gene_coexp, decreasing = T)][1:num_top])
+  
+  #Calculate the AUC using the organoid data
+  scores = network2[test_gene, ]
+  scores = scores[names(scores) != test_gene]
+  labels = names(scores) %in% top_coexp
+  
+  #Get the auc
+  auc = compute_auc(scores, labels)
+  return(auc)
+}
+
+```
+
+
+organoid dataset metadata
+
+```{r}
+
+all_sample_meta = read.csv('../../../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta
+```
+
+```{r}
+
+top_genes = 10
+
+glut_cons_matrix_1 = matrix(nrow = length(adult_glut_go), ncol = nrow(all_sample_meta), dimnames = list(adult_glut_go, all_sample_meta$sample_ids))
+gaba_cons_matrix_1 = matrix(nrow = length(adult_gaba_go), ncol = nrow(all_sample_meta), dimnames = list(adult_gaba_go, all_sample_meta$sample_ids))
+nonN_cons_matrix_1 = matrix(nrow = length(adult_nonN_go), ncol = nrow(all_sample_meta), dimnames = list(adult_nonN_go, all_sample_meta$sample_ids))
+astro_oligo_cons_matrix_1 = matrix(nrow = length(adult_astro_oligo_go), ncol = nrow(all_sample_meta), dimnames = list(adult_astro_oligo_go, all_sample_meta$sample_ids))
+
+for(i in 1:nrow(all_sample_meta)){
+  load(sprintf('../../../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[i]))
+  
+
+  glut_cons_matrix_1[ ,i] = sapply(1:length(adult_glut_go), function(i) get_conserved_coexp(adult_rank_corr_mat, rank_corr_matrix, adult_glut_go[i],top_genes ) )
+  gaba_cons_matrix_1[ ,i] = sapply(1:length(adult_gaba_go), function(i) get_conserved_coexp(adult_rank_corr_mat, rank_corr_matrix, adult_gaba_go[i],top_genes ) )
+  nonN_cons_matrix_1[ ,i] = sapply(1:length(adult_nonN_go), function(i) get_conserved_coexp(adult_rank_corr_mat, rank_corr_matrix, adult_nonN_go[i],top_genes ) )
+  astro_oligo_cons_matrix_1[ ,i] = sapply(1:length(adult_astro_oligo_go), function(i) get_conserved_coexp(adult_rank_corr_mat, rank_corr_matrix, adult_astro_oligo_go[i],top_genes ) )
+  print(i)
+
+}
+
+
+```
+
+
+```{r}
+
+glut_cons_matrix_1
+
+
+```
+
+
+
+
+```{r}
+
+glut_cons_matrix = reshape2::melt(t(glut_cons_matrix_1))
+mean_order_df = glut_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+glut_cons_matrix$Var2  = factor(glut_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(glut_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Adult coexpression (AUC)') + xlab('Top 100 Adult Glutamatergic markers') + 
+  theme(axis.text.x = element_blank()) 
+
+gaba_cons_matrix = reshape2::melt(t(gaba_cons_matrix_1))
+mean_order_df = gaba_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+gaba_cons_matrix$Var2  = factor(gaba_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(gaba_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Adult coexpression (AUC)') + xlab('Top 100 Adult GABAergic markers') + 
+  theme(axis.text.x = element_blank()) 
+
+nonN_cons_matrix = reshape2::melt(t(nonN_cons_matrix_1))
+mean_order_df = nonN_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+nonN_cons_matrix$Var2  = factor(nonN_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(nonN_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Adult coexpression (AUC)') + xlab('Top 100 Adult Non-neuronal markers') + 
+  theme(axis.text.x = element_blank()) 
+
+astro_oligo_cons_matrix = reshape2::melt(t(astro_oligo_cons_matrix_1))
+mean_order_df = astro_oligo_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+astro_oligo_cons_matrix$Var2  = factor(astro_oligo_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(astro_oligo_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Adult coexpression (AUC)') + xlab('Top 100 Adult Astro/Oligo markers') + 
+  theme(axis.text.x = element_blank()) 
+
+
+```
+
+
+
+get the conserved coexpression score per organoid dataset and check the distributions
+
+
+
+
+
+```{r}
+
+adult_org_glut_cons_coexp_score = colSums(glut_cons_matrix_1) / length(adult_glut_go)
+adult_org_gaba_cons_coexp_score = colSums(gaba_cons_matrix_1) / length(adult_gaba_go)
+adult_org_nonN_cons_coexp_score = colSums(nonN_cons_matrix_1) / length(adult_nonN_go)
+adult_org_astro_oligo_cons_coexp_score = colSums(astro_oligo_cons_matrix_1) / length(adult_astro_oligo_go)
+
+hist(adult_org_glut_cons_coexp_score)
+hist(adult_org_gaba_cons_coexp_score)
+hist(adult_org_nonN_cons_coexp_score)
+hist(adult_org_astro_oligo_cons_coexp_score)
+
+
+par(pty = 's')
+plot(adult_org_glut_cons_coexp_score, adult_org_gaba_cons_coexp_score, xlab = 'Adult Glut conservation coexp score', ylab = 'Adult GABA conservation coexp score')
+plot(adult_org_glut_cons_coexp_score, adult_org_nonN_cons_coexp_score, xlab = 'Adult Glut conservation coexp score', ylab = 'Adult NonN conservation coexp score')
+plot(adult_org_nonN_cons_coexp_score, adult_org_gaba_cons_coexp_score, xlab = 'Adult NonN conservation coexp score', ylab = 'Adult GABA conservation coexp score')
+plot(adult_org_nonN_cons_coexp_score, adult_org_astro_oligo_cons_coexp_score, xlab = 'Adult NonN conservation coexp score', ylab = 'Adult Astro/Oligo conservation coexp score')
+
+```
+Compare to the fetal conserved coexpression scores
+
+
+
+```{r}
+
+#pdf(file = 'graphs/coexpression/conserved_coexpression/adult_fetal_consCoexp_in_orgs_glut_v5.pdf', useDingbats = F, height = 4, width = 4)
+#par(pty = 's')
+#plot(all_sample_meta$glut_cons_coexp_metric, adult_org_glut_cons_coexp_score, 
+#     xlab = 'Org. conservation of fetal Glut coexp', ylab = 'Org. conservation of Adult Glut coexp',
+#     xlim = c(.3,1), ylim = c(.3,1), main = 'Glutamatergic')
+#abline(a = 0, b = 1, col = 'red')
+#dev.off()
+cor(all_sample_meta$glut_cons_coexp_metric, adult_org_glut_cons_coexp_score, method = 'spearman')
+par(pty = 's')
+plot(all_sample_meta$glut_cons_coexp_metric, adult_org_glut_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal Glut coexp', ylab = 'Org. conservation of Adult Glut coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'Glutamatergic')
+abline(a = 0, b = 1, col = 'red')
+
+#pdf(file = 'graphs/coexpression/conserved_coexpression/adult_fetal_consCoexp_in_orgs_gaba_v5.pdf', useDingbats = F, height = 4, width = 4)
+#par(pty = 's')
+#plot(all_sample_meta$gaba_cons_coexp_metric, adult_org_gaba_cons_coexp_score, 
+#     xlab = 'Org. conservation of fetal GABA coexp', ylab = 'Org. conservation of Adult GABA coexp',
+#     xlim = c(.3,1), ylim = c(.3,1), main = 'GABAergic')
+#abline(a = 0, b = 1, col = 'red')
+#dev.off()
+cor(all_sample_meta$gaba_cons_coexp_metric, adult_org_gaba_cons_coexp_score, method = 'spearman')
+par(pty = 's')
+plot(all_sample_meta$gaba_cons_coexp_metric, adult_org_gaba_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal GABA coexp', ylab = 'Org. conservation of Adult GABA coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'GABAergic')
+abline(a = 0, b = 1, col = 'red')
+
+
+#pdf(file = 'graphs/coexpression/conserved_coexpression/adult_fetal_consCoexp_in_orgs_nonN_v5.pdf', useDingbats = F, height = 4, width = 4)
+#par(pty = 's')
+#plot(all_sample_meta$nonN_cons_coexp_metric, adult_org_nonN_cons_coexp_score, 
+#     xlab = 'Org. conservation of fetal nonN coexp', ylab = 'Org. conservation of Adult nonN coexp',
+#     xlim = c(.3,1), ylim = c(.3,1), main = 'Non-neuronal')
+#abline(a = 0, b = 1, col = 'red')
+#dev.off()
+cor(all_sample_meta$nonN_cons_coexp_metric, adult_org_nonN_cons_coexp_score, method = 'spearman')
+par(pty = 's')
+plot(all_sample_meta$nonN_cons_coexp_metric, adult_org_nonN_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal nonN coexp', ylab = 'Org. conservation of Adult nonN coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'Non-neuronal')
+abline(a = 0, b = 1, col = 'red')
+
+
+#pdf(file = 'graphs/coexpression/conserved_coexpression/adult_fetal_consCoexp_in_orgs_astro_oligo_v5.pdf', useDingbats = F, height = 4, width = 4)
+#par(pty = 's')
+#plot(all_sample_meta$nonN_cons_coexp_metric, adult_org_astro_oligo_cons_coexp_score, 
+#     xlab = 'Org. conservation of fetal nonN coexp', ylab = 'Org. conservation of Adult Astro/Oligo coexp',
+#     xlim = c(.3,1), ylim = c(.3,1), main = 'Astro/Oligo')
+#abline(a = 0, b = 1, col = 'red')
+#dev.off()
+cor(all_sample_meta$nonN_cons_coexp_metric, adult_org_astro_oligo_cons_coexp_score, method = 'spearman')
+par(pty = 's')
+plot(all_sample_meta$nonN_cons_coexp_metric, adult_org_astro_oligo_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal nonN coexp', ylab = 'Org. conservation of Adult Astro/Oligo coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'Astro/Oligo')
+abline(a = 0, b = 1, col = 'red')
+
+```
+
+
+
+```{r}
+all_sample_meta$adult_gaba_cons_coexp = adult_org_gaba_cons_coexp_score
+all_sample_meta$adult_glut_cons_coexp = adult_org_glut_cons_coexp_score
+all_sample_meta$adult_nonN_cons_coexp = adult_org_nonN_cons_coexp_score
+all_sample_meta$adult_astro_oligo_cons_coexp = adult_org_astro_oligo_cons_coexp_score
+
+all_sample_meta %>% filter(adult_glut_cons_coexp >= .8 & glut_cons_coexp_metric >= .7 )
+
+```
+
+
+For the best and worst organoid datasets, show the global distributions of conserved co-expression aurocs against the aggregate fetal network
+Include the adult performance against the fetal network
+
+```{r}
+load('../../../data/coexpression/fetal/ranked_agg_fetal_coexp_network_8_17_23.Rdata')
+dim(fetal_ranked_aggregate)
+dim(adult_rank_corr_mat)
+
+```
+
+get the adult performance for all genes against the fetal data
+
+```{r}
+top_genes = 10
+start = Sys.time()
+adult_to_fetal_consCoexp = unlist(mclapply(1:length(go_genes), function(i) get_conserved_coexp(fetal_ranked_aggregate, adult_rank_corr_mat, go_genes[i],top_genes ), mc.cores = 10 ))
+mean_adult_to_fetal = mean(adult_to_fetal_consCoexp)
+end = Sys.time()
+end - start
+
+
+hist(adult_to_fetal_consCoexp, breaks = seq(0,1, .001))
+density_adult = density(adult_to_fetal_consCoexp)
+plot(density_adult)
+
+mean_adult_to_fetal
+```
+
+
+
+Now get a distribution of the mean conserved co-expression aurocs across all genes for each organoid data, using the fetal data as a reference
+Will use to highlight the organoid datasets that perform worse than the adult co-expression. More removed from fetal data than adult, clearly not a good developmental model
+
+Already did this, stored in the organoid metadata
+
+
+
+```{r}
+
+hist(all_sample_meta$genome_cons_coexp_score, breaks = seq(.5,1,.01))
+
+```
+
+
+```{r}
+#pdf(file = 'graphs/coexpression/conserved_coexpression/mean_org_and_adult_consCoexp_hist_v3.pdf', 
+#   height = 4, width = 4, useDingbats = F)
+#par(pty = 's')
+#hist(all_sample_meta$genome_cons_coexp_score, breaks = seq(.5,1,.01), xlim = c(.5,1), 
+#     xlab = 'Mean Fetal Conserved Co-expression AUROC', main = '')
+#legend("topright", c("Organoid", "Adult"), col=c("grey", "red"), lwd=10, cex = .75)
+#abline(v = mean_adult_to_fetal, col = 'red', lwd = 3)
+#dev.off()
+
+par(pty = 's')
+hist(all_sample_meta$genome_cons_coexp_score, breaks = seq(.5,1,.01), xlim = c(.5,1), 
+     xlab = 'Mean Fetal Conserved Co-expression AUROC', main = '')
+legend("topright", c("Organoid", "Adult"), col=c("grey", "red"), lwd=10, cex = .75)
+abline(v = mean_adult_to_fetal, col = 'red', lwd = 3)
+```
+
+
+```{r}
+
+save( adult_org_glut_cons_coexp_score,  adult_org_gaba_cons_coexp_score,  adult_org_nonN_cons_coexp_score, mean_adult_to_fetal,
+      file = '/home/werner/projects/meta_qc_organoid/data/coexpression/adult_coexpression/adult_pres_coexp_scores.Rdata')
+
+```
+
+
+
+
+```{r}
+table(all_sample_meta$genome_cons_coexp_score <= mean_adult_to_fetal)
+
+
+```
+
+compare fetal consCoexp global score with organoid cell number
+Include the downsampled fetal data
+
+```{r}
+load('../../../data/coexpression/fetal_downsample_consCoexp_fetal_matrix_v2.Rdata')
+downsample_mat
+```
+
+```{r}
+
+cor_permute = function(x,y, method_cor){
+  permute_y = sample(y,size=length(y), replace=FALSE)
+  corr = suppressWarnings(cor(x,permute_y, method=method_cor))
+  return(corr)
+}
+
+num_permutes = 10000
+
+```
+
+
+
+
+
+```{r}
+
+bad_org_index = all_sample_meta$genome_cons_coexp_score <= mean_adult_to_fetal
+
+all_sample_meta[bad_org_index, ]
+hist(log10(as.numeric(all_sample_meta$post_qc_cell_number[!bad_org_index])), breaks = 24, xlim = c(0,6))
+hist(log10(as.numeric(all_sample_meta$post_qc_cell_number[bad_org_index])), add = T, col = 'blue', breaks = 24)
+
+#pdf(file = 'graphs/coexpression/conserved_coexpression/mean_org_consCoexp_and_cellNum_scatter_v3.pdf', 
+#    height = 4, width = 4, useDingbats = F)
+#par(pty = 's')
+#plot(log10(as.numeric(all_sample_meta$post_qc_cell_number)), all_sample_meta$genome_cons_coexp_score, ylim = c(.5, 1), 
+#     xlab = 'log10(number of cells)', ylab = 'Mean Fetal Conserved Co-expression AUROC')
+
+#dev.off()
+
+par(pty = 's')
+plot(log10(as.numeric(all_sample_meta$post_qc_cell_number)), all_sample_meta$genome_cons_coexp_score, ylim = c(.5, 1), 
+     xlab = 'log10(number of cells)', ylab = 'Mean Fetal Conserved Co-expression AUROC')
+
+original_cor = cor(as.numeric(all_sample_meta$post_qc_cell_number), all_sample_meta$genome_cons_coexp_score, method = 'spearman')
+#Do permutation to get a correlation pvalue
+permute_cors = unlist(mclapply(1:num_permutes, function(i) 
+  cor_permute(as.numeric(all_sample_meta$post_qc_cell_number),  all_sample_meta$genome_cons_coexp_score, 'spearman'), mc.cores=5))
+p_val = sum(abs(permute_cors) >= abs(original_cor) ) / num_permutes 
+original_cor
+p_val
+
+
+hist(permute_cors, breaks = 64)
+
+```
+
+```{r}
+
+mean_fetal_auroc = colMeans(downsample_mat)
+sd_fetal_auroc = apply(downsample_mat, 2, sd)
+fetal_downsamp_fetal_consCoexp_df = data.frame(mean_auroc = mean_fetal_auroc, cell_num = c(100,500,1000,5000,10000,50000,100000), 
+                                               top_error = mean_fetal_auroc + sd_fetal_auroc,
+                                               bottom_error = mean_fetal_auroc - sd_fetal_auroc)
+
+org_global_fetal_consCoexp_df = data.frame(mean_auroc =  all_sample_meta$genome_cons_coexp_score, cell_num =as.numeric(all_sample_meta$post_qc_cell_number))
+
+
+ggplot(fetal_downsamp_fetal_consCoexp_df, aes(x = log10(cell_num), y = mean_auroc, color = 'Fetal')) + geom_point() + geom_line() +
+  geom_errorbar(aes(ymin = bottom_error, ymax = top_error, color = 'Fetal'), width = .3) +
+  geom_hline(yintercept = mean_adult_to_fetal,color = 'red') +
+  geom_point(data = org_global_fetal_consCoexp_df, aes(x = log10(cell_num), y = mean_auroc, color = 'Organoid'), size = 2 ) +
+  xlab('log10( Number of cells )') + ylab('Mean global fetal preserved co-expression score') + ylim(.5, .85) +
+  scale_color_manual(breaks = c('Organoid','Fetal','Adult'), 
+                     values = c('Organoid' = 'black', 'Fetal'= 'blue', 'Adult' ='red')) +
+  theme(axis.text = element_text(size = 12))
+#ggsave(filename = 'mean_org_consCoexp_and_cellNum_scatter_downsamp_fetal_v5.pdf', path = 'graphs/coexpression/conserved_coexpression/',
+#       useDingbats = F, device = 'pdf', height = 4, width = 4)
+```
+
+
+```{r}
+
+save(fetal_downsamp_fetal_consCoexp_df, file = '/home/werner/projects/meta_qc_organoid/data/coexpression/adult_coexpression/fetal_downsamp_fetal_consCoexp_df.Rdata')
+
+```
+
+
+
+
+
+
+
+
+do a leave one out fetal analysis too
+
+```{r}
+
+ranked_go_coexp_paths = c( '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_fan_fu_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_poliodakis_batch1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_poliodakis_batch2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW14_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW18_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW19_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW19_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_31_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_34_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW25_coexp.Rdata', 
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW5_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW5-5_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-6_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-6_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-7_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_3_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_4_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW7_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW7-5_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_3_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-5_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-5_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW9-2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW9-5_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW10_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW11-5_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW12_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW13_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW14_coexp.Rdata')
+
+
+dataset_names = c('GW7-28','GW17-18_1', 'GW17-18_2','GW14_2','GW18','GW19_1','GW19_2','GW20_1','GW20_2','GW20_3','GW25',
+                  'GW5','GW5-5','GW6_1','GW6_2','GW6-6_1','GW6-6_2','GW6-7','GW6-9_1','GW6-9_2','GW6-9_3','GW6-9_4','GW7','GW7-5','GW8_1','GW8_2','GW8_3','GW8-1','GW8-5_1',
+                  'GW8-5_2','GW9-2','GW9-5','GW10','GW11-5','GW12','GW13','GW14_1')
+
+```
+
+
+```{r}
+
+mean_fetal_consCoexp_scores = vector(mode = 'numeric', length = length(ranked_go_coexp_paths))
+
+for(j in 1:length(ranked_go_coexp_paths)){
+  start = Sys.time()
+  #Aggregate all the fetal data
+  current_dataset = dataset_names[j]
+  temp_fetal_ranked_coexp = ranked_go_coexp_paths[dataset_names != current_dataset]
+  
+  #Aggregate leaving out that dataset
+  sum_rank_corr_genes = matrix(rep(0, length(go_genes)^2), nrow = length(go_genes), ncol = length(go_genes), 
+                               dimnames = list(go_genes, go_genes))
+  
+  for(network in 1:length(temp_fetal_ranked_coexp)){
+    x = load(temp_fetal_ranked_coexp[network])
+    rank_mat = get(x)
+    rm(x)
+    
+    #Reorder to match the same gene order
+    index = match(go_genes, rownames(rank_mat))
+    rank_mat = rank_mat[index, index]
+  
+    sum_rank_corr_genes = sum_rank_corr_genes + rank_mat
+    
+  }
+
+  #Divide sums by the number of datasets to get averages
+  agg_rank_mat = sum_rank_corr_genes / (length(dataset_names) - 1)
+  
+  #Rank the coexpression data
+  rank_corr = frank(c(agg_rank_mat), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  agg_rank_mat = matrix(norm_rank_corr, nrow = nrow(agg_rank_mat), ncol = ncol(agg_rank_mat), 
+                            dimnames = list(rownames(agg_rank_mat), colnames(agg_rank_mat)))
+ 
+  diag(agg_rank_mat) = 1
+  print('Done aggregating networks...')
+  
+  #Load in the test fetal network
+  x = load(ranked_go_coexp_paths[j])
+  rank_mat = get(x)
+  rm(x)
+  
+  
+  #Get all the conserved co-expression scores and then save the mean
+  all_consCoexp_scores_fetal = unlist(mclapply(1:length(go_genes), 
+                                function(i) get_conserved_coexp(agg_rank_mat, rank_mat, go_genes[i],top_genes ),mc.cores = 10))
+  mean_fetal_consCoexp_scores[j] = mean(all_consCoexp_scores_fetal)
+  
+  end = Sys.time()
+  print(sprintf('Done with %i fetal datasets', j))
+  print(end - start)
+
+}
+
+```
+
+```{r}
+pdf(file = 'graphs/coexpression/conserved_coexpression/mean_org_and_adult_and_fetal_consCoexp_hist_v5.pdf', 
+    height = 4, width = 4, useDingbats = F)
+
+par(pty = 's')
+hist(all_sample_meta$genome_cons_coexp_score, breaks = seq(.5,1,.01), xlim = c(.5,1), 
+     xlab = 'Mean Fetal Preserved Co-expression AUROC', main = '')
+legend("topright", c("Organoid", 'Fetal', "Adult"), col=c("grey",rgb(0,0,1,.85), "red"), lwd=10, cex = .75)
+abline(v = mean_adult_to_fetal, col = 'red', lwd = 3)
+hist(mean_fetal_consCoexp_scores, breaks = seq(.5,1,.01), add = T, col = rgb(0,0,1,.85))
+
+dev.off()
+
+par(pty = 's')
+hist(all_sample_meta$genome_cons_coexp_score, breaks = seq(.5,1,.01), xlim = c(.5,1), 
+     xlab = 'Mean Fetal Preserved Co-expression AUROC', main = '')
+legend("topright", c("Organoid", 'Fetal', "Adult"), col=c("grey",rgb(0,0,1,.85), "red"), lwd=10, cex = .75)
+abline(v = mean_adult_to_fetal, col = 'red', lwd = 3)
+hist(mean_fetal_consCoexp_scores, breaks = seq(.5,1,.01), add = T, col = rgb(0,0,1,.85))
+
+```
+
+```{r}
+save(mean_fetal_consCoexp_scores, file = '../data/coexpression/mean_global_consCoexp_org_and_fetal_v3.Rdata' )
+
+```
+
+
+
+Save the organoid metadata too aswell
+
+```{r}
+
+write.csv(all_sample_meta, file = '../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v3.csv', row.names = F)
+```
+
+
+
+
+
+#############################
+Pasca organoid transplantation dataset
+compare non-transplanted and transplanted organoids with the conservation of adult co-expression
+
+
+##############################
+
+
+
+```{r}
+
+
+pasca_temp = filter(all_sample_meta, grepl('revah', sample_ids)) %>% select(sample_ids, Condition, adult_gaba_cons_coexp, adult_glut_cons_coexp, adult_astro_oligo_cons_coexp )
+pasca_temp = reshape2::melt(pasca_temp)
+pasca_temp
+
+ggplot(pasca_temp, aes(x = Condition, y = value)) + geom_point(size = 2, alpha = .5) +
+  facet_wrap(~variable) + ylim(.5, 1) + ylab('Preserved Co-expression AUROC') + ggtitle('Preservation of Adult Co-expression')
+
+#ggsave(filename = 'pasca_transplant_consCoexp_adult_celltypes_v2.pdf', path = 'graphs/coexpression/conserved_coexpression/pasca_transplant/', 
+#       device = 'pdf', 
+#       height = 4, width = 6, useDingbats = F)
+```
+
+
+
+
+
+
+```{r}
+
+pasca_temp %>% filter(Condition == 'Normal') %>% group_by(variable) %>% summarize(mean = mean(value), sd = sd(value))
+pasca_temp %>% filter(Condition == 'Transplanted') %>% group_by(variable) %>% summarize(mean = mean(value), sd = sd(value))
+```
+
+
+normalize to the average of the non-transplanted and plot log2 FC
+
+```{r}
+#Get the means of the non tranplanted data
+adult_glut_nonT_mean = mean(filter(pasca_temp,Condition == 'Normal' & variable == 'adult_glut_cons_coexp')$value)
+adult_gaba_nonT_mean = mean(filter(pasca_temp,Condition == 'Normal' & variable == 'adult_gaba_cons_coexp')$value)
+adult_nonN_nonT_mean = mean(filter(pasca_temp,Condition == 'Normal' & variable == 'adult_astro_oligo_cons_coexp')$value)
+
+
+mean_norm_vec = vector(mode = 'numeric', length = nrow(pasca_temp))
+
+glut_index = pasca_temp$variable == 'adult_glut_cons_coexp'
+mean_norm_vec[glut_index] = pasca_temp$value[glut_index] / adult_glut_nonT_mean
+gaba_index = pasca_temp$variable == 'adult_gaba_cons_coexp'
+mean_norm_vec[gaba_index] = pasca_temp$value[gaba_index] / adult_gaba_nonT_mean
+nonN_index = pasca_temp$variable == 'adult_astro_oligo_cons_coexp'
+mean_norm_vec[nonN_index] = pasca_temp$value[nonN_index] / adult_nonN_nonT_mean
+
+mean_norm_vec = log(mean_norm_vec, base = 2)
+pasca_temp$nonT_FC = mean_norm_vec
+
+pasca_temp
+
+ggplot(pasca_temp, aes(x = Condition, y = nonT_FC)) + geom_point(size = 2, alpha = .5) + facet_wrap(~variable) +
+  ylab('log2(Non-transplanted fold change)') + ggtitle('Preservation of Adult Co-expression')
+#ggsave(filename = 'pasca_transplant_consCoexp_adult_celltypes_log2FC_v2.pdf', path = 'graphs/coexpression/conserved_coexpression/pasca_transplant/', 
+#       device = 'pdf', 
+#       height = 4, width = 6, useDingbats = F)
+```
+
+```{r}
+pasca_adult_df = pasca_temp
+save(pasca_adult_df, file = '/home/werner/projects/meta_qc_organoid/data/coexpression/adult_coexpression/pasca_adult_df.Rdata' )
+
+```
+

@@ -1,0 +1,2054 @@
+
+
+Testing the fetal conservation of fetal data
+First look at the unannotated datasets
+Then do the annotated, leave one out and reaggregate the coexpression, then test
+
+
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(MetBrewer)
+library(ComplexHeatmap)
+library(circlize)
+library(EGAD)
+library(parallel)
+
+```
+
+
+
+Fetal data
+```{r}
+
+
+human_fetal_dataset_names = c( 'fan_fu','poliodakis_batch1', 'poliodakis_batch2','areal_GW14','areal_GW18_2','areal_GW19','areal_GW19_2', 
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25')
+
+human_fetal_dataset_paths = list('../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata')
+
+names(human_fetal_dataset_paths)= human_fetal_dataset_names 
+human_fetal_dataset_paths
+
+
+unannot_human_fetal_dataset_names = c('areal_GW16','areal_GW18', 'areal_GW22','areal_GW22T','shi_wang','zhou_lu',
+                                      'yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4',
+                                      'trevino_greenleaf_1','trevino_greenleaf_2','trevino_greenleaf_3','trevino_greenleaf_4')
+
+unannot_human_fetal_dataset_paths = list(
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
+                                 '../data/seurat_objs/individual/shi_wang_seurat_processed.Rdata', 
+                                 '../data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032680_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032681_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032682_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032683_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata')
+
+names(unannot_human_fetal_dataset_paths)= unannot_human_fetal_dataset_names 
+unannot_human_fetal_dataset_paths
+
+```
+
+
+
+```{r}
+
+#Get colors
+class_palette = met.brewer("Archambault", 20)
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'non-marker' = 'white')
+
+class_celltype_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 
+                         'Glutamatergic' = class_palette[14], 
+                         'Neural_Progenitor' = class_palette[4],
+                         'Intermediate_Progenitor' = class_palette[16],
+                         'Dividing_Progenitor' = class_palette[10],
+                         'other' = 'white')
+
+```
+
+
+```{r}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+```
+
+
+```{r}
+
+test_markers = list(
+    fan_fu = read_markers("6_26_24_annot_metaMarkers/fan_fu_fetal_class_markers.csv.gz"), 
+    poliodakis_1 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch1_fetal_class_markers.csv.gz"),
+    poliodakis_2 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch2_fetal_class_markers.csv.gz"),
+    GW14 = read_markers("6_26_24_annot_metaMarkers/areal_GW14_fetal_class_markers.csv.gz"),
+    GW18_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW18_2_fetal_class_markers.csv.gz"),
+    GW19 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_fetal_class_markers.csv.gz"),
+    GW19_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_2_fetal_class_markers.csv.gz"),
+    GW20 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_fetal_class_markers.csv.gz"),
+    GW20_31 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_31_fetal_class_markers.csv.gz"),
+    GW20_34 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_34_fetal_class_markers.csv.gz"),
+    GW25 = read_markers("6_26_24_annot_metaMarkers/areal_GW25_fetal_class_markers.csv.gz"),
+    linnarsson_GW5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW5_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-7_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_3_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_4 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_4_fetal_class_markers_v4.csv.gz"), 
+    linnarsson_GW7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW7_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_3_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_5_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_5_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW9_point_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW9_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW10 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW10_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW11_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW11-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW12 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW12_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW13 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW13_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW14 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW14_fetal_class_markers_v4.csv.gz")
+    )
+
+fetal_meta_markers = make_meta_markers(test_markers, detailed_stats = TRUE)
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+```
+
+
+```{r}
+
+load('../data/coexpression/fetal/ranked_agg_fetal_coexp_network_8_17_23.Rdata')
+dim(fetal_ranked_aggregate)
+
+load(file = '../data/coexpression/fetal/ranked_agg_unannot_fetal_coexp_network_8_17_23.Rdata')
+dim(unannot_fetal_ranked_aggregate)
+```
+
+
+```{r}
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+
+#GO database from GOSOURCEDATE: 2023-01-01, it's tied to the version of R. current version of R is 4.3.1
+org.Hs.eg.db #running this will print out the GO database version information
+go_table <- as.data.frame(org.Hs.egGO2ALLEGS) #gene mapping to the direct GO term and that term's children
+go_table$gene_symbol = mapIds(org.Hs.eg.db, go_table$gene_id, "SYMBOL","ENTREZID") #Add gene symbol 
+
+go_genes = unique(go_table$gene_symbol)
+length(go_genes)
+go_terms = unique(go_table$go_id)
+length(go_terms)
+```
+
+
+```{r}
+#library(org.Hs.eg.db)
+library(EGAD)
+#library(AnnotationDbi)
+load('../data/go_annotations/go_annotations.Rdata')
+```
+
+
+```{r}
+compute_auc = function(scores, label){
+  label = as.logical(label)
+  n1 = as.numeric(sum(label))
+  n2 = as.numeric(sum(!label))
+  R1 = sum(rank(scores)[label])
+  U1 = R1 - n1 * (n1 + 1)/2
+  auc = U1/(n1 * n2)
+  return(auc)
+}
+
+
+#Compute ROC curve for plotting
+#Input is a list of true/false labels (celltype identity) ranked by some metric (gene expression). 
+roc_curve = function(ranked_labels){
+
+  #Get total number of positives and negatives
+  num_pos = sum(ranked_labels)
+  num_neg = sum(!ranked_labels)
+  num_total = length(ranked_labels)
+  #Cumulative sum of positives and negatives
+  tp = cumsum(ranked_labels)
+  fp = cumsum(!ranked_labels)
+  
+  fpr = fp/num_neg
+  tpr = tp/num_pos
+  
+  return(list('fpr' = fpr, 'tpr' = tpr))
+}
+
+get_conserved_coexp = function(network1, network2, test_gene, num_top = 10){
+
+  #Get the top 10 coexpressed genes
+  test_gene_coexp = network1[test_gene, ]
+  test_gene_coexp = test_gene_coexp[names(test_gene_coexp) != test_gene]
+  top_coexp = names(test_gene_coexp[order(test_gene_coexp, decreasing = T)][1:num_top])
+  
+  #Calculate the AUC using the organoid data
+  scores = network2[test_gene, ]
+  scores = scores[names(scores) != test_gene]
+  labels = names(scores) %in% top_coexp
+  
+  #Get the auc
+  auc = compute_auc(scores, labels)
+  return(auc)
+}
+
+```
+
+
+the cell type marker sets filtered for just the GO genes
+```{r}
+
+go_nProg = nProg_markers$gene[nProg_markers$gene %in% go_genes]
+go_nonN = nonN_markers$gene[nonN_markers$gene %in% go_genes]
+go_gaba = gaba_markers$gene[gaba_markers$gene %in% go_genes]
+go_glut = glut_markers$gene[glut_markers$gene %in% go_genes]
+go_intProg = intProg_markers$gene[intProg_markers$gene %in% go_genes & (!intProg_markers$gene %in% divProg_markers$gene)]
+go_divProg = divProg_markers$gene[divProg_markers$gene %in% go_genes]
+go_micro = micro_markers$gene[micro_markers$gene %in% go_genes]
+
+length(go_nProg)
+length(go_nonN)
+length(go_gaba)
+length(go_glut)
+length(go_divProg)
+length(go_intProg)
+length(go_micro)
+
+
+```
+
+```{r}
+
+#fetal coexpression network paths
+
+unannot_ranked_coexp_paths = c('../data/coexpression/fetal/8_17_23_GO_coexp/ranked_shi_wang_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_1_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_2_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_3_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_4_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_1_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_2_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_3_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_4_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_zhou_lu_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW16_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW18_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW22_coexp.Rdata',
+'../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW22T_coexp.Rdata')
+
+
+unannot_human_fetal_dataset_names = c('shi_wang', 'yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4',
+                                      'trevino_greenleaf_1','trevino_greenleaf_2','trevino_greenleaf_3','trevino_greenleaf_4',
+                                      'zhou_lu','areal_GW16','areal_GW18', 'areal_GW22','areal_GW22T')
+```
+
+
+```{r}
+
+top_genes = 10
+
+nProg_cons_matrix_1 = matrix(nrow = length(go_nProg), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_nProg, unannot_human_fetal_dataset_names))
+intProg_cons_matrix_1 = matrix(nrow = length(go_intProg), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_intProg, unannot_human_fetal_dataset_names))
+divProg_cons_matrix_1 = matrix(nrow = length(go_divProg), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_divProg, unannot_human_fetal_dataset_names))
+glut_cons_matrix_1 = matrix(nrow = length(go_glut), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_glut, unannot_human_fetal_dataset_names))
+gaba_cons_matrix_1 = matrix(nrow = length(go_gaba), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_gaba, unannot_human_fetal_dataset_names))
+nonN_cons_matrix_1 = matrix(nrow = length(go_nonN), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_nonN, unannot_human_fetal_dataset_names))
+micro_cons_matrix_1 = matrix(nrow = length(go_micro), ncol = length(unannot_ranked_coexp_paths), dimnames = list(go_micro, unannot_human_fetal_dataset_names))
+
+
+for(i in 1:length(unannot_ranked_coexp_paths)){
+
+  load(unannot_ranked_coexp_paths[[i]])
+  
+  fetal_nProg_cons_coexp = unlist(mclapply(1:length(go_nProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_nProg[i],top_genes ), mc.cores = 10 ))
+  nProg_cons_matrix_1[ ,i] = fetal_nProg_cons_coexp 
+  
+  fetal_intProg_cons_coexp = unlist(mclapply(1:length(go_intProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_intProg[i],top_genes ), mc.cores = 10  ))
+  intProg_cons_matrix_1[ ,i] = fetal_intProg_cons_coexp
+  
+  fetal_divProg_cons_coexp = unlist(mclapply(1:length(go_divProg), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_divProg[i],top_genes ), mc.cores = 10  ))
+  divProg_cons_matrix_1[ ,i] = fetal_divProg_cons_coexp
+  
+  fetal_glut_cons_coexp = unlist(mclapply(1:length(go_glut), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_glut[i],top_genes ), mc.cores = 10  ))
+  glut_cons_matrix_1[ ,i] = fetal_glut_cons_coexp 
+  
+  fetal_gaba_cons_coexp = unlist(mclapply(1:length(go_gaba), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_gaba[i],top_genes ), mc.cores = 10  ))
+  gaba_cons_matrix_1[ ,i] = fetal_gaba_cons_coexp 
+  
+  fetal_nonN_cons_coexp = unlist(mclapply(1:length(go_nonN), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_nonN[i],top_genes ), mc.cores = 10  ))
+  nonN_cons_matrix_1[ ,i] = fetal_nonN_cons_coexp 
+  
+  fetal_micro_cons_coexp = unlist(mclapply(1:length(go_micro), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_micro[i],top_genes ), mc.cores = 10  ))
+  micro_cons_matrix_1[ ,i] = fetal_micro_cons_coexp 
+  
+  print(i)
+
+}
+
+
+```
+
+
+```{r}
+#Order genes based on mean conservation value
+nProg_cons_matrix = reshape2::melt(t(nProg_cons_matrix_1))
+mean_order_df = nProg_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+nProg_cons_matrix$Var2  = factor(nProg_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(nProg_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Neural Progenitor markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+intProg_cons_matrix = reshape2::melt(t(intProg_cons_matrix_1))
+mean_order_df = intProg_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+intProg_cons_matrix$Var2  = factor(intProg_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(intProg_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Intermediate Progenitor markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+divProg_cons_matrix = reshape2::melt(t(divProg_cons_matrix_1))
+mean_order_df = divProg_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+divProg_cons_matrix$Var2  = factor(divProg_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(divProg_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Dividing Progenitor markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+glut_cons_matrix = reshape2::melt(t(glut_cons_matrix_1))
+mean_order_df = glut_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+glut_cons_matrix$Var2  = factor(glut_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(glut_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Glutamatergic markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+gaba_cons_matrix = reshape2::melt(t(gaba_cons_matrix_1))
+mean_order_df = gaba_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+gaba_cons_matrix$Var2  = factor(gaba_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(gaba_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal GABAergic markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+nonN_cons_matrix = reshape2::melt(t(nonN_cons_matrix_1))
+mean_order_df = nonN_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+nonN_cons_matrix$Var2  = factor(nonN_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(nonN_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Non-neuronal markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+micro_cons_matrix = reshape2::melt(t(micro_cons_matrix_1))
+mean_order_df = micro_cons_matrix %>% group_by(Var2) %>% summarize(median = median(value)) %>% arrange(desc(median))
+micro_cons_matrix$Var2  = factor(micro_cons_matrix$Var2, levels = c(as.character(mean_order_df$Var2)))
+ggplot(micro_cons_matrix, aes(x = Var2, y = value)) + geom_boxplot(outlier.size = .5, outlier.alpha = .5) +
+  ylab('Conservation of Fetal coexpression (AUC)') + xlab('Top 100 fetal Microglia/Immune markers') + ylim(0,1) +
+  theme(axis.text.x = element_blank()) 
+
+```
+```{r}
+nonN_temp = nonN_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_nonN)) %>% 
+  mutate(gene_celltype_label = rep('fetal non-neuronal marker', 14))
+
+micro_temp = micro_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_micro)) %>% 
+  mutate(gene_celltype_label = rep('fetal Microglia/Immune marker', 14))
+
+gaba_temp = gaba_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_gaba)) %>% 
+  mutate(gene_celltype_label = rep('fetal GABAergic marker',14))
+
+glut_temp = glut_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_glut)) %>% 
+  mutate(gene_celltype_label = rep('fetal glutamatergic marker', 14))
+
+nProg_temp = nProg_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_nProg)) %>% 
+  mutate(gene_celltype_label = rep('fetal Neural progenitor marker',14))
+
+intProg_temp = intProg_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_intProg)) %>% 
+  mutate(gene_celltype_label = rep('fetal Intermediate progenitor marker', 14))
+
+divProg_temp = divProg_cons_matrix %>% group_by(Var1) %>% summarize(sum = sum(value)/length(go_divProg)) %>% 
+  mutate(gene_celltype_label = rep('fetal Dividing progenitor marker', 14))
+
+unannot_sum_cons_coexp_df = do.call(rbind, list(nonN_temp, micro_temp, gaba_temp, glut_temp, nProg_temp, intProg_temp, divProg_temp))
+
+ggplot(unannot_sum_cons_coexp_df, aes(x = gene_celltype_label, y = sum)) + geom_boxplot() + 
+  ylab('Strength of conserved celltype coexp (sum(AUC))') + 
+  ggtitle('Unannotated fetal datasets') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+
+unannot_sum_cons_coexp_df
+```
+
+
+Now do with the annotated fetal datasets
+Leave one out, redo metamarkers, get top metamarkers, reaggregate the individual networks, test conservation of coexpression for the left out network
+
+```{r}
+ranked_go_coexp_paths =list( 
+                 fan_fu = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_fan_fu_coexp.Rdata',
+                 poliodakis_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_poliodakis_batch1_coexp.Rdata',
+                 poliodakis_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_poliodakis_batch2_coexp.Rdata',
+                 GW14 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW14_coexp.Rdata',
+                 GW18_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW18_2_coexp.Rdata',
+                 GW19 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW19_coexp.Rdata',
+                 GW19_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW19_2_coexp.Rdata',
+                 GW20 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_coexp.Rdata',
+                 GW20_31 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_31_coexp.Rdata',
+                 GW20_34 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_34_coexp.Rdata',
+                 GW25 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW25_coexp.Rdata',
+                 linnarsson_GW5 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW5_coexp.Rdata',
+                 linnarsson_GW5_point_5 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW5-5_coexp.Rdata',
+                 linnarsson_GW6_1 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6_1_coexp.Rdata',
+                 linnarsson_GW6_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6_2_coexp.Rdata',
+                 linnarsson_GW6_point_6_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-6_1_coexp.Rdata',
+                 linnarsson_GW6_point_6_2 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-6_2_coexp.Rdata',
+                 linnarsson_GW6_point_7 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-7_coexp.Rdata',
+                 linnarsson_GW6_point_9_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_1_coexp.Rdata',
+                 linnarsson_GW6_point_9_2 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_2_coexp.Rdata',
+                 linnarsson_GW6_point_9_3 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_3_coexp.Rdata',
+                 linnarsson_GW6_point_9_4 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_4_coexp.Rdata',
+                 linnarsson_GW7 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW7_coexp.Rdata',
+                 linnarsson_GW7_point_5 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW7-5_coexp.Rdata',
+                 linnarsson_GW8_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_1_coexp.Rdata',
+                 linnarsson_GW8_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_2_coexp.Rdata',
+                 linnarsson_GW8_3 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_3_coexp.Rdata',
+                 linnarsson_GW8_point_1 =  '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-1_coexp.Rdata',
+                 linnarsson_GW8_point_5_1 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-5_1_coexp.Rdata',
+                 linnarsson_GW8_point_5_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-5_2_coexp.Rdata',
+                 linnarsson_GW9_point_2 =  '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW9-2_coexp.Rdata',
+                 linnarsson_GW9_point_5 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW9-5_coexp.Rdata',
+                 linnarsson_GW10 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW10_coexp.Rdata',
+                 linnarsson_GW11_point_5 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW11-5_coexp.Rdata',
+                 linnarsson_GW12 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW12_coexp.Rdata',
+                 linnarsson_GW13 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW13_coexp.Rdata',
+                 linnarsson_GW14 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW14_coexp.Rdata')
+
+annot_marker_names = c('fan_fu','poliodakis_1','poliodakis_2','GW14','GW18_2','GW19','GW19_2','GW20','GW20_31','GW20_34','GW25',
+                        'linnarsson_GW5', 'linnarsson_GW5_point_5', 'linnarsson_GW6_1', 'linnarsson_GW6_2', 'linnarsson_GW6_point_6_1', 'linnarsson_GW6_point_6_2', 'linnarsson_GW6_point_7',
+                  'linnarsson_GW6_point_9_1', 'linnarsson_GW6_point_9_2', 'linnarsson_GW6_point_9_3', 'linnarsson_GW6_point_9_4', 'linnarsson_GW7', 'linnarsson_GW7_point_5', 
+                  'linnarsson_GW8_1', 'linnarsson_GW8_2','linnarsson_GW8_3', 'linnarsson_GW8_point_1', 'linnarsson_GW8_point_5_1', 'linnarsson_GW8_point_5_2', 'linnarsson_GW9_point_2',
+                  'linnarsson_GW9_point_5','linnarsson_GW10', 'linnarsson_GW11_point_5', 'linnarsson_GW12', 'linnarsson_GW13', 'linnarsson_GW14')
+
+
+```
+
+
+```{r}
+#Dataframe to hold all the results
+#The marker sets are going to be slightly different lengths because I'm redoing the metamarkers each time
+cross_valid_fetal_cons_coexp_df = data.frame(Var1 = c(), Var2 = c(), value = c(), gene_celltype_label = c(), num_go_markers = c())
+
+for(j in 1:length(annot_marker_names)){
+
+  start = Sys.time()
+  current_dataset = annot_marker_names[j]
+  
+  #Redo the metamarkers and get the top 100 cell type markers
+  fetal_meta_markers = make_meta_markers(test_markers[names(test_markers) != current_dataset], detailed_stats = TRUE)
+  
+  gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+  glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+  nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+  nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+  intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+  divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+  micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+  
+  #Ignore duplicates
+  all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+  dups = all_markers[duplicated(all_markers)]
+  
+  intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+  nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+  divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+  nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+  gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+  glut_markers = glut_markers %>% filter(!gene %in% dups)
+  micro_markers = micro_markers %>% filter(!gene %in% dups)
+  
+  go_nProg = nProg_markers$gene[nProg_markers$gene %in% go_genes]
+  go_nonN = nonN_markers$gene[nonN_markers$gene %in% go_genes]
+  go_gaba = gaba_markers$gene[gaba_markers$gene %in% go_genes]
+  go_glut = glut_markers$gene[glut_markers$gene %in% go_genes]
+  go_intProg = intProg_markers$gene[intProg_markers$gene %in% go_genes]
+  go_divProg = divProg_markers$gene[divProg_markers$gene %in% go_genes]
+  go_micro = micro_markers$gene[micro_markers$gene %in% go_genes]
+
+  #Leave one out and get the new aggregated fetal network
+  sum_rank_corr_genes = matrix(rep(0, length(go_genes)^2), nrow = length(go_genes), ncol = length(go_genes), dimnames = list(go_genes, go_genes))
+  current_ranked_go_coexp_paths = ranked_go_coexp_paths[names(ranked_go_coexp_paths) != current_dataset]
+  
+  for(i in 1:length(current_ranked_go_coexp_paths)){
+    x = load(current_ranked_go_coexp_paths[[i]])
+    rank_mat = get(x)
+    rm(x)
+    #Reorder to match the same gene order
+    index = match(go_genes, rownames(rank_mat))
+    rank_mat = rank_mat[index, index]
+    sum_rank_corr_genes = sum_rank_corr_genes + rank_mat
+  }
+  #Divide sums by the number of datasets to get averages
+  agg_rank_mat = sum_rank_corr_genes / length(current_ranked_go_coexp_paths)
+  
+  #Rank
+  rank_corr = frank(c(agg_rank_mat), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(agg_rank_mat), ncol = ncol(agg_rank_mat), 
+                            dimnames = list(rownames(agg_rank_mat), colnames(agg_rank_mat)))
+  agg_rank_mat = rank_corr_matrix
+  diag(agg_rank_mat) = 1
+  print('Done aggregating networks...')
+
+
+  #Load in the coexpression network of the leftout dataset and get the conservation of coexpression
+  top_genes = 10
+  load(ranked_go_coexp_paths[names(ranked_go_coexp_paths) == current_dataset][[1]])
+  #Conservation of coexpression
+  fetal_nProg_cons_coexp = unlist(mclapply(1:length(go_nProg), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_nProg[i],top_genes ), mc.cores = 10 ))
+  fetal_intProg_cons_coexp = unlist(mclapply(1:length(go_intProg), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_intProg[i],top_genes ), mc.cores = 10  ))
+  fetal_divProg_cons_coexp = unlist(mclapply(1:length(go_divProg), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_divProg[i],top_genes ), mc.cores = 10  ))
+  fetal_glut_cons_coexp = unlist(mclapply(1:length(go_glut), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_glut[i],top_genes ), mc.cores = 10  ))
+  fetal_gaba_cons_coexp = unlist(mclapply(1:length(go_gaba), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_gaba[i],top_genes ), mc.cores = 10  ))
+  fetal_nonN_cons_coexp = unlist(mclapply(1:length(go_nonN), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_nonN[i],top_genes ), mc.cores = 10  ))
+  fetal_micro_cons_coexp = unlist(mclapply(1:length(go_micro), function(i) get_conserved_coexp(agg_rank_mat, rank_corr_matrix, go_micro[i],top_genes ), mc.cores = 10  ))
+  
+  #Vectors for dataframe
+  genes = c(go_nProg, go_intProg, go_divProg, go_glut, go_gaba, go_nonN, go_micro)
+  gene_celltype_labels = c(rep('fetal Neural progenitor marker', length = length(go_nProg)),
+                           rep('fetal Intermediate progenitor marker', length = length(go_intProg)),
+                           rep('fetal Dividing progenitor marker', length = length(go_divProg)),
+                           rep('fetal glutamatergic marker', length = length(go_glut)),
+                           rep('fetal GABAergic marker', length = length(go_gaba)),
+                           rep('fetal non-neuronal marker', length = length(go_nonN)),
+                           rep('fetal Microglia/Immune marker', length = length(go_micro)))
+  
+  num_markers = c(rep(length(go_nProg), length = length(go_nProg)),
+                           rep(length(go_intProg), length = length(go_intProg)),
+                           rep(length(go_divProg), length = length(go_divProg)),
+                           rep(length(go_glut), length = length(go_glut)),
+                           rep(length(go_gaba), length = length(go_gaba)),
+                           rep(length(go_nonN), length = length(go_nonN)),
+                           rep(length(go_micro), length = length(go_micro))) 
+  
+  conserved_coexp_vec = c(fetal_nProg_cons_coexp ,fetal_intProg_cons_coexp,fetal_divProg_cons_coexp,
+                          fetal_glut_cons_coexp , fetal_gaba_cons_coexp , fetal_nonN_cons_coexp, fetal_micro_cons_coexp )
+  dataset_label = rep(current_dataset, length = length(genes))
+  
+  
+  #save results
+  temp_df = data.frame(Var1 = dataset_label, Var2 = genes, value = conserved_coexp_vec, gene_celltype_label = gene_celltype_labels, num_go_markers = num_markers)
+  
+  cross_valid_fetal_cons_coexp_df = rbind(cross_valid_fetal_cons_coexp_df, temp_df)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done with %i datasets...', j))
+
+}
+```
+
+
+
+```{r}
+cross_valid_fetal_cons_coexp_df
+
+```
+
+
+
+save fetal results
+```{r}
+
+save(cross_valid_fetal_cons_coexp_df, unannot_sum_cons_coexp_df, file = '../data/coexpression/fetal_preserve_fetal_coexp_dfs.Rdata' )
+```
+
+```{r}
+
+load(file = '../data/coexpression/fetal_preserve_fetal_coexp_dfs.Rdata' )
+
+```
+
+
+
+
+
+sum for each dataset
+
+```{r}
+#Normalizing the sum by the number of markers, can compare across the datasets
+
+sum_cons_coexp_df = cross_valid_fetal_cons_coexp_df %>% group_by(Var1, gene_celltype_label) %>% summarize(sum = sum(value)/num_go_markers[1])
+
+ggplot(sum_cons_coexp_df, aes(x = gene_celltype_label, y = sum)) + geom_boxplot(scale = 'width') + ylab('Strength of conserved celltype coexp (sum(AUC))') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+
+```
+
+
+
+load in the organoid results and compare
+```{r}
+
+all_sample_meta = read.csv('../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta
+```
+
+```{r}
+
+sum_vec = c(all_sample_meta$nProg_cons_coexp_metric, all_sample_meta$intProg_cons_coexp_metric, all_sample_meta$dividing_cons_coexp_metric,
+            all_sample_meta$glut_cons_coexp_metric, all_sample_meta$gaba_cons_coexp_metric, all_sample_meta$nonN_cons_coexp_metric,
+            all_sample_meta$micro_cons_coexp_metric)
+
+label_vec = c(rep('fetal Neural progenitor marker', nrow(all_sample_meta)), rep('fetal Intermediate progenitor marker', nrow(all_sample_meta)),
+              rep('fetal Dividing progenitor marker', nrow(all_sample_meta)),
+              rep('fetal glutamatergic marker', nrow(all_sample_meta)), 
+              rep('fetal GABAergic marker', nrow(all_sample_meta)), rep('fetal non-neuronal marker', nrow(all_sample_meta)),
+              rep('fetal Microglia/Immune marker', nrow(all_sample_meta)))
+
+var1_vec = rep(paste('organoid dataset', as.character(1:nrow(all_sample_meta))), 7)
+dataset_label = rep('organoid', length = length(var1_vec))
+
+
+organoid_sum_cons_coexp_df = data.frame(Var1 = var1_vec, sum = sum_vec, gene_celltype_label = label_vec, dataset_type = dataset_label)
+
+organoid_sum_cons_coexp_df
+```
+
+
+
+
+```{r}
+
+unannot_sum_cons = unannot_sum_cons_coexp_df %>% mutate(dataset_type = rep('unannotated fetal', length = nrow(unannot_sum_cons_coexp_df)))
+unannot_sum_cons
+#Being weird, mutate wasn't working for some reason
+sum_cons = sum_cons_coexp_df
+sum_cons$dataset_type = rep('annotated fetal', length = nrow(sum_cons_coexp_df))
+sum_cons
+```
+
+
+```{r}
+
+comb_cons_coexp_df = rbind(sum_cons, unannot_sum_cons, organoid_sum_cons_coexp_df)
+comb_cons_coexp_df$dataset_type = factor(comb_cons_coexp_df$dataset_type, levels = c('annotated fetal','unannotated fetal','organoid'))
+comb_cons_coexp_df$gene_celltype_label = factor(comb_cons_coexp_df$gene_celltype_label, levels = c('fetal Dividing progenitor marker', 'fetal Neural progenitor marker',
+                                                                                                   'fetal glutamatergic marker','fetal non-neuronal marker',
+                                                                                                   'fetal Intermediate progenitor marker',
+                                                                                                   'fetal GABAergic marker','fetal Microglia/Immune marker'))
+
+color_vec = c('annotated fetal' = 'darkorange', 'unannotated fetal' = 'firebrick', 'organoid'= 'darkorchid')
+
+ggplot(filter(comb_cons_coexp_df, gene_celltype_label != 'fetal Microglia/Immune marker'), aes(x = gene_celltype_label, y = sum, fill = dataset_type)) + geom_boxplot(alpha = .75) +
+  geom_hline(yintercept = .5, col = 'red', linetype = 'dashed') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + ylab('Strength of conserved coexpression') +
+  scale_fill_manual(values = color_vec) +
+  theme(axis.title.x = element_blank())
+ggsave(filename = 'combined_strength_cons_coexpression_v5.pdf', path = 'graphs/coexpression/conserved_coexpression/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 8.5)
+
+ggplot(comb_cons_coexp_df, aes(x = gene_celltype_label, y = sum, fill = dataset_type)) + geom_boxplot(alpha = .75) +
+  geom_hline(yintercept = .5, col = 'red', linetype = 'dashed') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + ylab('Strength of conserved coexpression') +
+  scale_fill_manual(values = color_vec) +
+  theme(axis.title.x = element_blank())
+ggsave(filename = 'combined_strength_cons_coexpression_with_micro_v5.pdf', path = 'graphs/coexpression/conserved_coexpression/', 
+       device = 'pdf', useDingbats = F, height = 4, width = 8.5)
+
+```
+
+
+```{r}
+
+save(comb_cons_coexp_df, file = '../data/coexpression/combined_consCoexp_celltype_markers_v5.Rdata')
+
+```
+
+```{r}
+
+load( file = '../data/coexpression/combined_consCoexp_celltype_markers_v5.Rdata')
+comb_cons_coexp_df
+```
+get the mean across the cell types for the fetal datasets, then mean across the datasets
+
+```{r}
+
+comb_cons_coexp_df %>% group_by(Var1) %>% summarize(mean_celltype = mean(sum), dataset_type = dataset_type[1]) %>% 
+  group_by(dataset_type) %>% 
+  summarize(mean_type = mean(mean_celltype), sd_type = sd(mean_celltype))
+```
+
+get the scores for the vertical/orbital shaker organoid study
+
+datasets 128 - 130 are orbital
+datasets 131-133 are vertical
+```{r}
+all_sample_meta
+comb_cons_coexp_df %>% filter(Var1 %in% c('organoid dataset 128','organoid dataset 129','organoid dataset 130')) %>% group_by(gene_celltype_label) %>% summarize(mean = mean(sum), sd =  sd(sum))
+comb_cons_coexp_df %>% filter(Var1 %in% c('organoid dataset 131','organoid dataset 132','organoid dataset 133')) %>% group_by(gene_celltype_label) %>% summarize(mean = mean(sum), sd =  sd(sum))
+
+```
+
+
+
+
+Find the organoid datasets that have high conservation of coexpression
+
+Trying to put a number to the organoid datasets that produce siimilar coexpression to fetal data. Most of the organoid protocols are not geared toward producing no neuronal or gabaergic cells, so a bit unfair to include those categories.
+Also the worst performing fetal dataset is zhou_lu which is a different normalization from the others, so makes me uncomfortable to use that as the fetal reference.
+An cut off of .9 seems decent, slightly more range than that of the fetal (lowest fetal excluding zhou_lu seems like 9.1) but also a really high score (roughly 90% of the markers had conserved coexp AUROCs close to 1)
+
+
+
+2 organoid datasets have an average greater than .90
+
+```{r}
+
+comb_cons_coexp_df %>% filter(!gene_celltype_label %in% c('fetal non-neuronal marker','fetal GABAergic marker')) %>% group_by(Var1) %>% 
+  summarize(avg_cons_coexp = mean(sum)) %>% arrange(desc(avg_cons_coexp))
+
+
+organoid_sum_cons_coexp_df %>% filter(!gene_celltype_label %in% c('fetal non-neuronal marker','fetal GABAergic marker')) %>% group_by(Var1) %>% 
+  summarize(avg_cons_coexp = mean(sum)) %>% arrange(desc(avg_cons_coexp))
+
+
+```
+
+
+
+
+Check out what protocols they come from
+
+```{r}
+
+temp_org = organoid_sum_cons_coexp_df %>% filter(!gene_celltype_label %in% c('fetal non-neuronal marker','fetal GABAergic marker')) %>% group_by(Var1) %>% 
+  summarize(avg_cons_coexp = mean(sum)) %>% arrange(desc(avg_cons_coexp))
+
+
+dataset_nums = filter(temp_org, avg_cons_coexp > .9)$Var1
+dataset_nums = as.numeric(sapply(strsplit(dataset_nums, ' '),'[[',3))
+
+
+table(all_sample_meta[dataset_nums, 'Author.described.protocol' ])
+
+
+```
+
+
+
+######################################
+Violin plots placing an example organoid dataset in reference to the fetal datasets
+And then the organoid datasets
+Put the percentiles in text above the violin plots
+For showcasing the future use of this analysis for benchmarking new data
+
+#####################################
+
+
+```{r}
+#compute percentile from ecdf
+ecdf_fun <- function(x,perc) ecdf(x)(perc)
+
+
+example_org_df = filter(comb_cons_coexp_df, Var1 == 'organoid dataset 16' & gene_celltype_label != 'fetal Microglia/Immune marker')
+temp_comb_cons_coexp_df = filter(comb_cons_coexp_df, Var1 != 'organoid dataset 16'& gene_celltype_label != 'fetal Microglia/Immune marker') 
+
+fetal_label = vector(mode = 'character', length = nrow(temp_comb_cons_coexp_df))
+fetal_label[grepl('fetal', temp_comb_cons_coexp_df$dataset_type)] = 'Fetal'
+fetal_label[grepl('organoid', temp_comb_cons_coexp_df$dataset_type)] = 'Organoid'
+temp_comb_cons_coexp_df$fetal_label = fetal_label
+
+#Get percentiles of the example organoid dataset using the empirical CDFs, round to nearest percentile
+org_fetal_percentile_vec = sapply(1:nrow(example_org_df), function(i) paste(as.character(round(ecdf_fun(filter(temp_comb_cons_coexp_df, 
+                                                                              fetal_label == 'Fetal' & gene_celltype_label == example_org_df$gene_celltype_label[i])$sum,
+                                                                       filter(example_org_df, gene_celltype_label == example_org_df$gene_celltype_label[i])$sum)*100)), 'percentile'))
+
+org_org_percentile_vec = sapply(1:nrow(example_org_df), function(i) paste(as.character(round(ecdf_fun(filter(temp_comb_cons_coexp_df, 
+                                                                              fetal_label == 'Organoid' & gene_celltype_label == example_org_df$gene_celltype_label[i])$sum,
+                                                                       filter(example_org_df, gene_celltype_label == example_org_df$gene_celltype_label[i])$sum)*100)), 'percentile'))
+
+example_org_df$org_fetal_percentile = org_fetal_percentile_vec 
+example_org_df$org_org_percentile = org_org_percentile_vec 
+
+ggplot(filter(temp_comb_cons_coexp_df, fetal_label == 'Fetal'), aes(x = gene_celltype_label, y = sum)) + geom_violin(scale = 'width') +
+  ylim(0,1) + ylab('Preserved Co-expression score') + ggtitle('Fetal datasets') +
+  stat_summary(data = example_org_df, aes(x = gene_celltype_label, y = sum), fun = 'sum', color = 'red', geom = 'crossbar', width = .5) +
+  geom_text(data = example_org_df, aes(label = org_fetal_percentile), y = .25) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+ggsave(filename = 'example_org_fetal_percentiles_violins_v2.pdf', path = 'graphs/coexpression/conserved_coexpression/', useDingbats = F, device = 'pdf', height = 4, width = 7)
+ggsave(filename = 'example_org_fetal_percentiles_violins_v2.png', path = 'graphs/coexpression/conserved_coexpression/', device = 'png', height = 4, width = 7)
+
+ggplot(filter(temp_comb_cons_coexp_df, fetal_label == 'Organoid'), aes(x = gene_celltype_label, y = sum)) + geom_violin(scale = 'width') +
+  ylim(0,1) + ylab('Preserved Co-expression score') + ggtitle('Organoid datasets') +
+  stat_summary(data = example_org_df, aes(x = gene_celltype_label, y = sum), fun = 'sum', color = 'red', geom = 'crossbar', width = .5) +
+  geom_text(data = example_org_df, aes(label = org_org_percentile), y = .25) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+ggsave(filename = 'example_org_org_percentiles_violins_v2.pdf', path = 'graphs/coexpression/conserved_coexpression/', useDingbats = F, device = 'pdf', height = 4, width = 7)
+ggsave(filename = 'example_org_org_percentiles_violins_v2.png', path = 'graphs/coexpression/conserved_coexpression/', device = 'png', height = 4, width = 7)
+```
+save a version of the comb_df for use in the Rpackage
+
+
+```{r}
+
+meta_presCoexp_df = comb_cons_coexp_df
+fetal_label = vector(mode = 'character', length = nrow(meta_presCoexp_df))
+fetal_label[grepl('fetal', meta_presCoexp_df$dataset_type)] = 'Fetal'
+fetal_label[grepl('organoid', meta_presCoexp_df$dataset_type)] = 'Organoid'
+meta_presCoexp_df$dataset_type = fetal_label
+meta_presCoexp_df
+
+
+saveRDS(meta_presCoexp_df, file = 'r_package_data/meta_presCoexp_df_v2.rds')
+
+```
+
+
+
+
+##########################################
+Boxplots of the cell-type consCoexpression scores across the organoid protocols
+Order by cell type
+##########################################
+
+```{r}
+all_sample_meta
+
+
+```
+
+
+
+
+
+
+
+```{r}
+org_egad_marker_palette = c('Fetal Non-neuronal markers' = class_palette[20], 'Fetal GABAergic markers' = class_palette[1], 
+                         'Fetal Glutamatergic markers' = class_palette[14], 
+                         'Fetal Neural Progenitor markers' = class_palette[4],
+                         'Fetal Intermediate Progenitor markers' = class_palette[16],
+                         'Fetal Dividing Progenitor markers' = class_palette[10],
+                         'Fetal Microglia/Immune markers' = class_palette[18])
+
+
+#Order the boxplots per celltype
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(intProg_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = intProg_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Intermediate Progenitor markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('Intermediate progenitors') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_intProg_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(nProg_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = nProg_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Neural Progenitor markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('Neural progenitors') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_nProg_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(dividing_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = dividing_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Dividing Progenitor markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('Dividing progenitors') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_divProg_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(glut_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = glut_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Glutamatergic markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('Glutamatergic') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_glut_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(gaba_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = gaba_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal GABAergic markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('GABAergic') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_gaba_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(nonN_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = nonN_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Non-neuronal markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('Non-neuronal') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_nonN_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Author.described.protocol) %>% summarize(median = median(micro_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Author.described.protocol = factor(all_sample_meta$Author.described.protocol, levels = label_order_df$Author.described.protocol)
+ggplot(all_sample_meta, aes(x = Author.described.protocol, y = micro_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Microglia/Immune markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Author described organoid protocol') + ggtitle('Microglia/Immune') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_micro_consCoexpScores_by_region_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+```
+And now with the grouped protocol classification
+
+```{r}
+
+#Order the boxplots per celltype
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(intProg_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = intProg_cons_coexp_metric)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Intermediate Progenitor markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('Intermediate progenitors') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_intProg_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(nProg_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = nProg_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Neural Progenitor markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('Neural progenitors') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_nProg_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(dividing_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = dividing_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Dividing Progenitor markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('Dividing progenitors') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_divProg_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(glut_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = glut_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Glutamatergic markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('Glutamatergic') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_glut_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(gaba_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = gaba_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal GABAergic markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('GABAergic') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_gaba_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(nonN_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = nonN_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Non-neuronal markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('Non-neuronal') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_nonN_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+label_order_df = all_sample_meta %>% group_by(Protocol.classification.region) %>% summarize(median = median(micro_cons_coexp_metric)) %>% arrange(desc(median))
+all_sample_meta$Protocol.classification.region = factor(all_sample_meta$Protocol.classification.region, levels = label_order_df$Protocol.classification.region)
+ggplot(all_sample_meta, aes(x = Protocol.classification.region, y = micro_cons_coexp_metric)) + geom_boxplot(fill = org_egad_marker_palette['Fetal Microglia/Immune markers'] ) +
+  ylab('Organoid Preserved Co-expression scores') + xlab('Organoid protocol') + ggtitle('Microglia/Immune') + ylim(.4, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_micro_consCoexpScores_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/conserved_coexpression',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+```
+
+
+
+
+
+
+
+##########################################
+
+For all genes, get a matrix of fetal preserved coexpression and then organoid preserved co-expression
+Looking for genes that are consistently preserved across all fetal datasets and organoids do rather poorly
+Or genes that organoids consistently do well with
+
+Fetal will be leave one out, get a new aggregate network, score preserved co-expression across all genes
+organoids will use the annotated fetal network as reference
+Just use the annotated fetal data for this
+
+
+#######################################
+
+
+
+Start with the organoids just because leave one out fetal aggregation will take awhile
+Check out the variance in scores for genes across the organoid datasets, any with consistent performance that are not cell-cycle related?
+
+
+```{r}
+top_genes = 10
+all_gene_org_pres_fetal_mat = matrix(nrow = length(go_genes), ncol = length(all_sample_meta$sample_ids), dimnames = list(go_genes, all_sample_meta$sample_ids))
+
+for(j in 1:length(all_sample_meta$sample_ids)){
+  load(sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[j]))
+  
+  start = Sys.time()
+  test_all_genes = unlist(mclapply(1:length(go_genes), function(i) get_conserved_coexp(fetal_ranked_aggregate, rank_corr_matrix, go_genes[i],top_genes ), mc.cores = 10 ))
+  end = Sys.time()
+  print(end - start)
+  
+  all_gene_org_pres_fetal_mat[ ,j] = test_all_genes
+
+}
+```
+
+
+
+```{r}
+
+
+all_gene_org_pres_fetal_mat[1:10, 1:10]
+
+
+```
+
+```{r}
+gene_means = rowMeans(all_gene_org_pres_fetal_mat)
+gene_sds =apply(all_gene_org_pres_fetal_mat, MARGIN = 1, FUN = sd)
+num_dataset_gene_zero_exp = rowSums(all_gene_org_pres_fetal_mat == .5)
+table(num_dataset_gene_zero_exp <= 5)
+
+hist(num_dataset_gene_zero_exp, breaks = seq(0,175, 1))
+
+exp_genes_index = which(num_dataset_gene_zero_exp <= 5)
+
+plot(gene_means[exp_genes_index], gene_sds[exp_genes_index], cex = .5)
+plot(gene_sds[exp_genes_index], gene_means[exp_genes_index], cex = .5)
+
+```
+
+
+```{r}
+
+
+org_all_gene_presCoexp_df = data.frame(gene = go_genes, mean_org_preCoexp = gene_means, sd_org_preCoexp = gene_sds, num_dataset_gene_not_expressed = num_dataset_gene_zero_exp)
+
+org_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 10) %>% arrange(desc(mean_org_preCoexp))
+org_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 10) %>% arrange(mean_org_preCoexp)
+
+```
+
+And now do a leave one out approach with the annotated fetal datasets
+Leave one out and aggregate the rest
+Get preserved coexpression scores for all genes
+
+
+
+```{r}
+ranked_go_coexp_paths =list( 
+                 fan_fu = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_fan_fu_coexp.Rdata',
+                 poliodakis_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_poliodakis_batch1_coexp.Rdata',
+                 poliodakis_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_poliodakis_batch2_coexp.Rdata',
+                 GW14 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW14_coexp.Rdata',
+                 GW18_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW18_2_coexp.Rdata',
+                 GW19 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW19_coexp.Rdata',
+                 GW19_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW19_2_coexp.Rdata',
+                 GW20 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_coexp.Rdata',
+                 GW20_31 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_31_coexp.Rdata',
+                 GW20_34 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW20_34_coexp.Rdata',
+                 GW25 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_arealization_GW25_coexp.Rdata',
+                 linnarsson_GW5 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW5_coexp.Rdata',
+                 linnarsson_GW5_point_5 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW5-5_coexp.Rdata',
+                 linnarsson_GW6_1 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6_1_coexp.Rdata',
+                 linnarsson_GW6_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6_2_coexp.Rdata',
+                 linnarsson_GW6_point_6_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-6_1_coexp.Rdata',
+                 linnarsson_GW6_point_6_2 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-6_2_coexp.Rdata',
+                 linnarsson_GW6_point_7 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-7_coexp.Rdata',
+                 linnarsson_GW6_point_9_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_1_coexp.Rdata',
+                 linnarsson_GW6_point_9_2 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_2_coexp.Rdata',
+                 linnarsson_GW6_point_9_3 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_3_coexp.Rdata',
+                 linnarsson_GW6_point_9_4 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW6-9_4_coexp.Rdata',
+                 linnarsson_GW7 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW7_coexp.Rdata',
+                 linnarsson_GW7_point_5 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW7-5_coexp.Rdata',
+                 linnarsson_GW8_1 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_1_coexp.Rdata',
+                 linnarsson_GW8_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_2_coexp.Rdata',
+                 linnarsson_GW8_3 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8_3_coexp.Rdata',
+                 linnarsson_GW8_point_1 =  '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-1_coexp.Rdata',
+                 linnarsson_GW8_point_5_1 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-5_1_coexp.Rdata',
+                 linnarsson_GW8_point_5_2 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW8-5_2_coexp.Rdata',
+                 linnarsson_GW9_point_2 =  '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW9-2_coexp.Rdata',
+                 linnarsson_GW9_point_5 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW9-5_coexp.Rdata',
+                 linnarsson_GW10 = '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW10_coexp.Rdata',
+                 linnarsson_GW11_point_5 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW11-5_coexp.Rdata',
+                 linnarsson_GW12 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW12_coexp.Rdata',
+                 linnarsson_GW13 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW13_coexp.Rdata',
+                 linnarsson_GW14 ='../data/coexpression/fetal/8_17_23_GO_coexp/ranked_linnarsson_GW14_coexp.Rdata')
+
+annot_marker_names = c('fan_fu','poliodakis_1','poliodakis_2','GW14','GW18_2','GW19','GW19_2','GW20','GW20_31','GW20_34','GW25',
+                        'linnarsson_GW5', 'linnarsson_GW5_point_5', 'linnarsson_GW6_1', 'linnarsson_GW6_2', 'linnarsson_GW6_point_6_1', 'linnarsson_GW6_point_6_2', 'linnarsson_GW6_point_7',
+                  'linnarsson_GW6_point_9_1', 'linnarsson_GW6_point_9_2', 'linnarsson_GW6_point_9_3', 'linnarsson_GW6_point_9_4', 'linnarsson_GW7', 'linnarsson_GW7_point_5', 
+                  'linnarsson_GW8_1', 'linnarsson_GW8_2','linnarsson_GW8_3', 'linnarsson_GW8_point_1', 'linnarsson_GW8_point_5_1', 'linnarsson_GW8_point_5_2', 'linnarsson_GW9_point_2',
+                  'linnarsson_GW9_point_5','linnarsson_GW10', 'linnarsson_GW11_point_5', 'linnarsson_GW12', 'linnarsson_GW13', 'linnarsson_GW14')
+
+
+```
+
+
+```{r}
+
+
+top_genes = 10
+all_gene_fetal_pres_fetal_mat = matrix(nrow = length(go_genes), ncol = length(annot_marker_names), dimnames = list(go_genes, annot_marker_names))
+
+for(j in 1:length(annot_marker_names)){
+
+  start = Sys.time()
+  current_dataset = annot_marker_names[j]
+  #Leave one out and get the new aggregated fetal network
+  sum_rank_corr_genes = matrix(rep(0, length(go_genes)^2), nrow = length(go_genes), ncol = length(go_genes), dimnames = list(go_genes, go_genes))
+  current_ranked_go_coexp_paths = ranked_go_coexp_paths[names(ranked_go_coexp_paths) != current_dataset]
+  
+  for(i in 1:length(current_ranked_go_coexp_paths)){
+    x = load(current_ranked_go_coexp_paths[[i]])
+    rank_mat = get(x)
+    rm(x)
+    #Reorder to match the same gene order
+    index = match(go_genes, rownames(rank_mat))
+    rank_mat = rank_mat[index, index]
+    sum_rank_corr_genes = sum_rank_corr_genes + rank_mat
+  }
+  #Divide sums by the number of datasets to get averages
+  agg_rank_mat = sum_rank_corr_genes / length(current_ranked_go_coexp_paths)
+  
+  #Rank
+  rank_corr = frank(c(agg_rank_mat), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(agg_rank_mat), ncol = ncol(agg_rank_mat), 
+                            dimnames = list(rownames(agg_rank_mat), colnames(agg_rank_mat)))
+  agg_rank_mat = rank_corr_matrix
+  diag(agg_rank_mat) = 1
+  print('Done aggregating networks...')
+  
+  #Get the preserved coexpression aurocs for all genes
+  x = load(ranked_go_coexp_paths[[j]])
+  rank_mat = get(x)
+  rm(x)
+  
+  test_all_genes = unlist(mclapply(1:length(go_genes), function(k) get_conserved_coexp(agg_rank_mat, rank_mat, go_genes[k],top_genes ), mc.cores = 10 ))
+  all_gene_fetal_pres_fetal_mat[ ,j] = test_all_genes
+  
+  end = Sys.time()
+  print(sprintf('Done with %i datasets...', j))
+  print(end - start)
+  
+}
+
+```
+
+
+
+
+```{r}
+gene_means = rowMeans(all_gene_fetal_pres_fetal_mat)
+gene_sds =apply(all_gene_fetal_pres_fetal_mat, MARGIN = 1, FUN = sd)
+num_dataset_gene_zero_exp = rowSums(all_gene_fetal_pres_fetal_mat == .5)
+table(num_dataset_gene_zero_exp == 0)
+
+exp_genes_index = which(num_dataset_gene_zero_exp == 0)
+
+plot(gene_means[exp_genes_index], gene_sds[exp_genes_index], cex = .5)
+plot(gene_sds[exp_genes_index], gene_means[exp_genes_index], cex = .5)
+
+```
+
+
+
+
+```{r}
+
+
+fetal_all_gene_presCoexp_df = data.frame(gene = go_genes, mean_fetal_preCoexp = gene_means, sd_fetal_preCoexp = gene_sds, num_dataset_gene_not_expressed = num_dataset_gene_zero_exp)
+
+fetal_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed == 0) %>% arrange(desc(mean_fetal_preCoexp))
+fetal_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed == 0) %>% arrange(mean_fetal_preCoexp)
+
+```
+
+
+```{r}
+save(org_all_gene_presCoexp_df, fetal_all_gene_presCoexp_df, file = "../data/coexpression/all_gene_presCoexp/all_gene_presCoexp_mats_v3.Rdata")
+
+```
+
+
+
+```{r}
+load(file = "../../../data/coexpression/all_gene_presCoexp/all_gene_presCoexp_mats_v3.Rdata")
+
+```
+
+
+```{r}
+
+org_exp_df = org_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 5) %>% arrange(desc(mean_org_preCoexp))
+fetal_exp_df = fetal_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 5) %>% arrange(desc(mean_fetal_preCoexp))
+
+shared_genes = intersect(fetal_exp_df$gene, org_exp_df$gene)
+
+length(shared_genes)
+
+org_exp_df = org_exp_df[org_exp_df$gene %in% shared_genes, ]
+fetal_exp_df = fetal_exp_df[fetal_exp_df$gene %in% shared_genes, ]
+
+
+#Reorder organoid to match fetal
+index = match(fetal_exp_df$gene, org_exp_df$gene)
+org_exp_df = org_exp_df[index, ]
+
+
+table(org_exp_df$gene == fetal_exp_df$gene)
+
+bad_org_index = org_exp_df$mean_org_preCoexp< .7 & fetal_exp_df$mean_fetal_preCoexp >= .99
+
+par(pty = 's')
+plot(fetal_exp_df$mean_fetal_preCoexp, org_exp_df$mean_org_preCoexp, cex = .5, xlim = c(0,1), ylim = c(0,1))
+points(fetal_exp_df$mean_fetal_preCoexp[bad_org_index], org_exp_df$mean_org_preCoexp[bad_org_index], col ='red', cex = .75, pch = 16)
+abline(a = 0, b = 1,col = 'red')
+#abline(v = .99, col = 'blue', lty = 'dashed')
+#abline(h = .7, col = 'blue', lty = 'dashed')
+
+#pdf(file = 'graphs/organoid_ind_gene_presCoexp/ind_global_gene_mean_presCoexp_scatter_v3.pdf', height = 4, width = 4, useDingbats = F)
+#par(pty = 's')
+#plot(fetal_exp_df$mean_fetal_preCoexp, org_exp_df$mean_org_preCoexp, cex = .5, xlim = c(0,1), ylim = c(0,1))
+#points(fetal_exp_df$mean_fetal_preCoexp[bad_org_index], org_exp_df$mean_org_preCoexp[bad_org_index], col ='red', cex = .75, pch = 16)
+#abline(a = 0, b = 1,col = 'red')
+#dev.off()
+
+```
+
+
+```{r}
+
+org_fetal_exp_df = fetal_exp_df
+org_fetal_exp_df$mean_org_preCoexp = org_exp_df$mean_org_preCoexp
+
+
+bad_org_df = org_fetal_exp_df %>% filter(mean_fetal_preCoexp >= .99, mean_org_preCoexp < .7)
+bad_org_df$gene
+```
+
+```{r}
+
+source('/home/werner/tools/GO_enrichment_human/GO_enrichment.R')
+load('/home/werner/tools/GO_enrichment_human/go_tables.Rdata')
+
+```
+
+Make a bar chart for the terms and pull out the specific ECM genes as examples
+
+```{r}
+
+
+go_enrich_results = gene_set_enrichment(bad_org_df$gene, BP_GO_mat)
+
+go_enrich_results_filt = filter(go_enrich_results, N_univ <= 500 & N_univ >= 10) %>% arrange(adj_pvals)
+
+top_10_go = go_enrich_results_filt[1:10 , ]
+top_10_go = top_10_go %>% arrange(desc(adj_pvals))
+top_10_go$description = factor(top_10_go$description, levels = c(top_10_go$description))
+ggplot(top_10_go, aes(x = -log10(adj_pvals), y = description)) + geom_bar(stat = 'identity') +
+  geom_vline(xintercept = -log10(.05), col = 'red', linetype = 'dashed')
+#ggsave(filename = 'bad_org_go_terms_barplot_v3.pdf', path = 'graphs/organoid_ind_gene_presCoexp/', device = 'pdf', useDingbats = F, width = 6, height = 4)
+
+top_10_go
+
+
+save(go_enrich_results, file = '/home/werner/projects/meta_qc_organoid/data/coexpression/all_gene_presCoexp/full_data_GO_enrich_bad_org_genes.Rdata')
+
+
+```
+
+```{r}
+
+go_enrich_results_filt
+
+```
+
+
+
+
+look at the genes in the ECM terms
+
+```{r}
+
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id %in% top_10_go$GO_term)
+
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id == 'GO:0071711')
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id == 'GO:0031589')
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id == 'GO:0043062')
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id == 'GO:0034446')
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id == 'GO:0030198')
+go_table %>% filter(gene_symbol %in% bad_org_df$gene & go_id == 'GO:0045229')
+
+ecm_genes = unique(filter(go_table, gene_symbol %in% bad_org_df$gene & go_id %in% c('GO:0071711','GO:0031589', 'GO:0043062', 'GO:0034446','GO:0030198','GO:0045229' ))$gene_symbol)
+ecm_genes
+```
+
+
+
+
+Run an experiment to see if this is specific to neurons
+
+Make co-expression networks of the primary tissue data just using the Glut and GABA neurons, make an aggregate too.
+Then do the leave one out preserved co-expression quantification using just these networks
+Are the ECM genes still highly preserved? How do the organoids compare to the just neuron networks?
+
+
+Load in data and filter for the GO genes
+Use python to get coexpression matrix
+```{r}
+Sys.setenv(RETICULATE_PYTHON = "/usr/bin/python3.6")
+library(reticulate)
+np <- reticulate::import("numpy")
+
+source_python('python_coexpression.py')
+```
+
+
+```{r}
+
+human_fetal_dataset_paths = c('../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                             '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                             '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata', 
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                             '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                              '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata')
+
+human_fetal_dataset_names = c('fan_fu','poliodakis_batch1', 'poliodakis_batch2','areal_GW14','areal_GW18_2','areal_GW19','areal_GW19_2', 'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25',
+                'linnarsson_GW5', 'linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1','linnarsson_GW6-6_2','linnarsson_GW6-7',
+                'linnarsson_GW6-9_1','linnarsson_GW6-9_2',
+                'linnarsson_GW6-9_3','linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2','linnarsson_GW8_3','linnarsson_GW8-1',
+                'linnarsson_GW8-5_1',
+                'linnarsson_GW8-5_2','linnarsson_GW9-2','linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13','linnarsson_GW14')
+
+```
+
+
+```{r}
+for(i in 1:length(human_fetal_dataset_paths)){
+
+  start = Sys.time()
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+
+  dataset_genes = rownames(dataset)
+  #Filter for the GO gene universe
+  dataset_genes_in_go = dataset_genes[dataset_genes %in% go_genes]
+  dataset_genes_missing_from_go = go_genes[! go_genes %in% dataset_genes]
+  #Subset the gene expression for the genes present in GO
+  dataset_gene_index = dataset_genes %in% dataset_genes_in_go
+  exp_data = as.matrix(dataset@assays$RNA@data[dataset_gene_index, ])
+  #Add zero counts for the missing GO genes
+  go_missing = matrix(0, nrow = length(dataset_genes_missing_from_go), ncol = ncol(exp_data), dimnames = list(dataset_genes_missing_from_go, colnames(exp_data)))
+  exp_data = rbind(exp_data, go_missing)
+  r_genes = rownames(exp_data)
+  
+  #Subset for just the neurons
+  cell_index = !dataset$labeled_classes %in% c('other','Microglia/Immune')
+  exp_data = exp_data[ , cell_index]
+
+  suppressWarnings(rm(dataset, GW18_2_merged_dataset, poliodakis_dataset_batch1,poliodakis_dataset_batch2, fan_fu_dataset, GW14_merged_dataset,
+     GW19_merged_dataset,GW19_2_merged_dataset,GW20_merged_dataset,GW20_31_merged_dataset,GW20_34_merged_dataset,GW25_merged_dataset, seurat_object))
+  gc()
+  
+  #Get coexpression data
+  test_py_exp = np$array(exp_data) #Turn R matrix into numpy array
+  python_script_test = get_coexpression(test_py_exp, r_genes) #Python method for spearman correlations, coexpression
+  corr_matrix = as.matrix(python_script_test) #Turn to matrix
+  #Convert Nans to 0, these are genes with 0 expression in any cells
+  corr_matrix[!is.finite(corr_matrix)] = 0
+  
+  file_name = sprintf('../data/coexpression/fetal/just_neurons/%s_neuron_coexp.Rdata', human_fetal_dataset_names[i])
+  save(corr_matrix, file = file_name)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done getting coexpression from %i dataset...', i))
+  
+  #Rank the coexpression data
+  #Rank everything, I want the minimum rank to be 1, so ties are minimum. Subtracting 1 sets the minimum rank to 0
+  rank_corr = frank(c(corr_matrix), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(corr_matrix), ncol = ncol(corr_matrix), dimnames = list(rownames(corr_matrix), colnames(corr_matrix)))
+  diag(rank_corr_matrix) = 1
+  
+  file_name = sprintf('../data/coexpression/fetal/just_neurons/ranked_%s_neuron_coexp.Rdata', human_fetal_dataset_names[i])
+  save(rank_corr_matrix, file =file_name)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done ranking coexpression from %i dataset...', i))  
+}
+```
+
+
+Aggregate the just neuron co-expression networks
+
+```{r}
+path_start = '/home/werner/projects/meta_qc_organoid/data/coexpression/fetal/just_neurons/'
+
+just_fetal_ranked_go_coexp_paths = list.files(path_start)
+just_fetal_ranked_go_coexp_paths  = just_fetal_ranked_go_coexp_paths[grepl('ranked_', just_fetal_ranked_go_coexp_paths )]
+just_fetal_ranked_go_coexp_paths = paste0(path_start, just_fetal_ranked_go_coexp_paths )
+just_fetal_ranked_go_coexp_paths  = just_fetal_ranked_go_coexp_paths[!grepl('aggregate', just_fetal_ranked_go_coexp_paths )]
+
+sum_rank_corr_genes = matrix(rep(0, length(go_genes)^2), nrow = length(go_genes), ncol = length(go_genes), dimnames = list(go_genes, go_genes))
+for(i in 1:length(just_fetal_ranked_go_coexp_paths)){
+  x = load(just_fetal_ranked_go_coexp_paths[[i]])
+  rank_mat = get(x)
+  rm(x)
+  #Reorder to match the same gene order
+  index = match(go_genes, rownames(rank_mat))
+  rank_mat = rank_mat[index, index]
+  sum_rank_corr_genes = sum_rank_corr_genes + rank_mat
+}
+#Divide sums by the number of datasets to get averages
+agg_rank_mat = sum_rank_corr_genes / length(just_fetal_ranked_go_coexp_paths)
+
+#Rank
+rank_corr = frank(c(agg_rank_mat), ties.method = 'min') - 1
+#Divide by max rank squeezes everything between 0 and 1
+norm_rank_corr = rank_corr / max(rank_corr)
+#Put back into a matrix
+rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(agg_rank_mat), ncol = ncol(agg_rank_mat), 
+                          dimnames = list(rownames(agg_rank_mat), colnames(agg_rank_mat)))
+agg_rank_mat = rank_corr_matrix
+diag(agg_rank_mat) = 1
+print('Done aggregating networks...')
+
+save(agg_rank_mat, file ='../data/coexpression/fetal/just_neurons/ranked_aggregate_annot_fetal_neuron_coexp.Rdata')
+
+```
+
+
+Do a leave one out on the preservation of co-expression with just the neurons
+
+```{r}
+
+human_fetal_neuron_names= c('areal_GW14','areal_GW18_2','areal_GW19_2','areal_GW19',
+                              'areal_GW20_31','areal_GW20_34','areal_GW20','areal_GW25','fan_fu','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12',
+                              'linnarsson_GW13','linnarsson_GW14',
+                              'linnarsson_GW5', 'linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1','linnarsson_GW6-6_2','linnarsson_GW6-7',
+                              'linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3','linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1',
+                              'linnarsson_GW8_2','linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2','linnarsson_GW9-5',
+                              'poliodakis_batch1', 'poliodakis_batch2')
+names(just_fetal_ranked_go_coexp_paths) = human_fetal_neuron_names
+
+top_genes = 10
+all_gene_fetal_neuron_pres_mat = matrix(nrow = length(go_genes), ncol = length(human_fetal_neuron_names), dimnames = list(go_genes, human_fetal_neuron_names))
+
+for(j in 1:length(human_fetal_neuron_names)){
+
+  start = Sys.time()
+  #current_dataset = annot_marker_names[j]
+  #Leave one out and get the new aggregated fetal network
+  sum_rank_corr_genes = matrix(rep(0, length(go_genes)^2), nrow = length(go_genes), ncol = length(go_genes), dimnames = list(go_genes, go_genes))
+  current_ranked_go_coexp_paths = just_fetal_ranked_go_coexp_paths[c(-j)]
+  
+  for(i in 1:length(current_ranked_go_coexp_paths)){
+    x = load(current_ranked_go_coexp_paths[[i]])
+    rank_mat = get(x)
+    rm(x)
+    #Reorder to match the same gene order
+    index = match(go_genes, rownames(rank_mat))
+    rank_mat = rank_mat[index, index]
+    sum_rank_corr_genes = sum_rank_corr_genes + rank_mat
+  }
+  #Divide sums by the number of datasets to get averages
+  agg_rank_mat = sum_rank_corr_genes / length(current_ranked_go_coexp_paths)
+  
+  #Rank
+  rank_corr = frank(c(agg_rank_mat), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(agg_rank_mat), ncol = ncol(agg_rank_mat), 
+                            dimnames = list(rownames(agg_rank_mat), colnames(agg_rank_mat)))
+  agg_rank_mat = rank_corr_matrix
+  diag(agg_rank_mat) = 1
+  print('Done aggregating networks...')
+  
+  #Get the preserved coexpression aurocs for all genes
+  x = load(just_fetal_ranked_go_coexp_paths[[j]])
+  rank_mat = get(x)
+  rm(x)
+  
+  test_all_genes = unlist(mclapply(1:length(go_genes), function(k) get_conserved_coexp(agg_rank_mat, rank_mat, go_genes[k],top_genes ), mc.cores = 10 ))
+  all_gene_fetal_neuron_pres_mat[ ,j] = test_all_genes
+  
+  end = Sys.time()
+  print(sprintf('Done with %i datasets...', j))
+  print(end - start)
+  
+}
+
+
+
+```
+
+
+
+```{r}
+
+
+save(all_gene_fetal_neuron_pres_mat, file = "../../../data/coexpression/all_gene_presCoexp/all_gene_just_neuron_presCoexp_fetal.Rdata")
+
+```
+
+```{r}
+
+
+load(file = "../../../data/coexpression/all_gene_presCoexp/all_gene_just_neuron_presCoexp_fetal.Rdata")
+
+```
+
+
+
+```{r}
+
+all_gene_fetal_neuron_pres_mat[1:10, 1:10]
+
+
+ecm_genes = c("CAV1"    ,"CAV2"    ,"RUNX1"   ,"CD36"    ,"COL1A2"  ,"COL4A1" , "CTSK"   , "EFNA1"  , "FN1"  ,   "ITGA1"  , "ITGA4"  , "LAMB1"  , "LAMC1" ,  "NID1"  ,  "DDR2"  ,
+              "RRAS"  ,  "DLC1",
+              "MERTK"  , "EMILIN1", "DISC1" ,  "PARVB" ,  "VWA1" ,   "MMP28" ,  "SPRY4" ,  "OLFML2A")
+
+hist(all_gene_fetal_neuron_pres_mat[ , 1], breaks = 60)
+
+table(all_gene_fetal_neuron_pres_mat[ , 1] == 1)
+
+
+
+rowMeans(all_gene_fetal_neuron_pres_mat[ecm_genes , ])
+```
+
+
+
+Now compute organoid preservation of co-expression using the primary tissue just neurons
+
+
+
+```{r}
+
+all_sample_meta = read.csv('../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta
+
+```
+
+```{r}
+
+x = load( file ='../data/coexpression/fetal/just_neurons/ranked_aggregate_annot_fetal_neuron_coexp.Rdata')
+ranked_aggregate_just_neurons = get(x)
+
+rm(agg_rank_mat, x)
+gc()
+
+ranked_aggregate_just_neurons[1:10, 1:10]
+
+```
+
+
+
+
+```{r}
+org_all_gene_fetal_neuron_pres_mat = matrix(nrow = length(go_genes), ncol = nrow(all_sample_meta), dimnames = list(go_genes, all_sample_meta$sample_ids))
+top = 10
+
+
+for(j in 1:nrow(all_sample_meta)){
+
+  start = Sys.time()
+  load(sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[j]))
+  
+  org_all_gene_fetal_neuron_pres_mat[ ,j] = unlist(mclapply(1:length(go_genes), function(i) get_conserved_coexp(ranked_aggregate_just_neurons, rank_corr_matrix, 
+                                                                                     go_genes[i], num_top = top ), mc.cores = 10 ))
+  
+  print(Sys.time() - start)
+  print(sprintf('Done with %i datasets...', j))
+
+}
+
+
+```
+
+```{r}
+
+
+save(org_all_gene_fetal_neuron_pres_mat, file = "../../../data/coexpression/all_gene_presCoexp/all_gene_just_neuron_presCoexp_organoid.Rdata")
+
+```
+
+```{r}
+
+
+load(file = "../../../data/coexpression/all_gene_presCoexp/all_gene_just_neuron_presCoexp_organoid.Rdata")
+
+```
+
+
+
+
+```{r}
+
+rowMeans(org_all_gene_fetal_neuron_pres_mat[ecm_genes , ])
+
+```
+
+
+```{r}
+gene_means = rowMeans(all_gene_fetal_neuron_pres_mat)
+gene_sds =apply(all_gene_fetal_neuron_pres_mat, MARGIN = 1, FUN = sd)
+num_dataset_gene_zero_exp = rowSums(all_gene_fetal_neuron_pres_mat == .5)
+table(num_dataset_gene_zero_exp == 0)
+
+exp_genes_index = which(num_dataset_gene_zero_exp == 0)
+
+plot(gene_means[exp_genes_index], gene_sds[exp_genes_index], cex = .5)
+plot(gene_sds[exp_genes_index], gene_means[exp_genes_index], cex = .5)
+
+
+fetal_all_gene_just_neuron_presCoexp_df = data.frame(gene = go_genes, mean_fetal_preCoexp = gene_means, sd_fetal_preCoexp = gene_sds, num_dataset_gene_not_expressed = num_dataset_gene_zero_exp)
+
+fetal_all_gene_just_neuron_presCoexp_df %>% filter(num_dataset_gene_not_expressed == 0) %>% arrange(desc(mean_fetal_preCoexp))
+fetal_all_gene_just_neuron_presCoexp_df %>% filter(num_dataset_gene_not_expressed == 0) %>% arrange(mean_fetal_preCoexp)
+
+```
+
+
+```{r}
+gene_means = rowMeans(org_all_gene_fetal_neuron_pres_mat)
+gene_sds =apply(org_all_gene_fetal_neuron_pres_mat, MARGIN = 1, FUN = sd)
+num_dataset_gene_zero_exp = rowSums(org_all_gene_fetal_neuron_pres_mat == .5)
+table(num_dataset_gene_zero_exp == 0)
+
+exp_genes_index = which(num_dataset_gene_zero_exp == 0)
+
+plot(gene_means[exp_genes_index], gene_sds[exp_genes_index], cex = .5)
+plot(gene_sds[exp_genes_index], gene_means[exp_genes_index], cex = .5)
+
+
+org_all_gene_just_neuron_presCoexp_df = data.frame(gene = go_genes, mean_org_preCoexp = gene_means, sd_org_preCoexp = gene_sds, num_dataset_gene_not_expressed = num_dataset_gene_zero_exp)
+
+org_all_gene_just_neuron_presCoexp_df %>% filter(num_dataset_gene_not_expressed == 0) %>% arrange(desc(mean_org_preCoexp))
+org_all_gene_just_neuron_presCoexp_df %>% filter(num_dataset_gene_not_expressed == 0) %>% arrange(mean_org_preCoexp)
+
+```
+
+
+
+```{r}
+
+just_neuron_org_exp_df = org_all_gene_just_neuron_presCoexp_df %>% filter(num_dataset_gene_not_expressed <=5) %>% arrange(desc(mean_org_preCoexp))
+just_neuron_fetal_exp_df = fetal_all_gene_just_neuron_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 5) %>% arrange(desc(mean_fetal_preCoexp))
+
+shared_genes = intersect(just_neuron_fetal_exp_df$gene, just_neuron_org_exp_df$gene)
+
+length(shared_genes)
+
+just_neuron_org_exp_df = just_neuron_org_exp_df[just_neuron_org_exp_df$gene %in% shared_genes, ]
+just_neuron_fetal_exp_df = just_neuron_fetal_exp_df[just_neuron_fetal_exp_df$gene %in% shared_genes, ]
+
+
+#Reorder organoid to match fetal
+index = match(just_neuron_fetal_exp_df$gene, just_neuron_org_exp_df$gene)
+just_neuron_org_exp_df = just_neuron_org_exp_df[index, ]
+
+
+table(just_neuron_org_exp_df$gene == just_neuron_fetal_exp_df$gene)
+
+bad_org_index = just_neuron_org_exp_df$mean_org_preCoexp<= .75 & just_neuron_fetal_exp_df$mean_fetal_preCoexp >= .9
+
+
+par(pty = 's')
+plot(just_neuron_fetal_exp_df$mean_fetal_preCoexp, just_neuron_org_exp_df$mean_org_preCoexp, cex = .5, xlim = c(0,1), ylim = c(0,1))
+points(just_neuron_fetal_exp_df$mean_fetal_preCoexp[bad_org_index], just_neuron_org_exp_df$mean_org_preCoexp[bad_org_index], col ='red', cex = .75, pch = 16)
+abline(a = 0, b = 1,col = 'red')
+
+#pdf(file = 'graphs/organoid_ind_gene_presCoexp/ind_global_gene_mean_presCoexp_scatter_just_neurons.pdf', height = 4, width = 4, useDingbats = F)
+#par(pty = 's')
+#plot(just_neuron_fetal_exp_df$mean_fetal_preCoexp, just_neuron_org_exp_df$mean_org_preCoexp, cex = .5, xlim = c(0,1), ylim = c(0,1))
+#points(just_neuron_fetal_exp_df$mean_fetal_preCoexp[bad_org_index], just_neuron_org_exp_df$mean_org_preCoexp[bad_org_index], col ='red', cex = .75, pch = 16)
+#abline(a = 0, b = 1,col = 'red')
+#dev.off()
+
+
+save(just_neuron_fetal_exp_df, just_neuron_org_exp_df, file = '/home/werner/projects/meta_qc_organoid/data/coexpression/all_gene_presCoexp/just_neuron_exp_df.Rdata')
+
+
+
+```
+
+
+
+
+
+```{r}
+just_neuron_org_fetal_exp_df = just_neuron_fetal_exp_df
+just_neuron_org_fetal_exp_df$mean_org_preCoexp = just_neuron_org_exp_df$mean_org_preCoexp
+
+test_genes = just_neuron_org_fetal_exp_df %>% filter(mean_org_preCoexp <= .7 & mean_fetal_preCoexp >= .85) %>% pull(gene)
+test_genes
+
+
+
+go_enrich_results = gene_set_enrichment(test_genes, BP_GO_mat)
+
+
+test_pvals = p.adjust(go_enrich_results$pvals, method = 'BH')
+
+hist(go_enrich_results$pvals)
+
+
+go_enrich_results_filt = filter(go_enrich_results, N_univ <= 500 & N_univ >= 10) %>% arrange(pvals)
+go_enrich_results_filt 
+
+top_10_go = go_enrich_results_filt[1:10 , ]
+top_10_go = top_10_go %>% arrange(desc(adj_pvals))
+top_10_go$description = factor(top_10_go$description, levels = c(top_10_go$description))
+ggplot(top_10_go, aes(x = -log10(adj_pvals), y = description)) + geom_bar(stat = 'identity') +
+  geom_vline(xintercept = -log10(.05), col = 'red', linetype = 'dashed')
+#ggsave(filename = 'bad_org_go_terms_just_neurons_barplot_v3.pdf', path = 'graphs/organoid_ind_gene_presCoexp/', device = 'pdf', useDingbats = F, width = 6, height = 4)
+
+top_10_go
+
+
+
+just_neuron_go_enrich_results = go_enrich_results
+save(just_neuron_go_enrich_results , file = '/home/werner/projects/meta_qc_organoid/data/coexpression/all_gene_presCoexp/just_neurons_GO_enrich_bad_org_genes.Rdata')
+```
+
+
+
+```{r}
+example_genes = go_table %>% filter(gene_symbol %in% test_genes & go_id %in% c('GO:0043062','GO:0030198','GO:0045229', 'GO:0031589', 'GO:0070831')) %>% pull(gene_symbol)
+ecm_genes_neurons = example_genes[!duplicated(example_genes)]
+
+
+
+
+
+```
+
+
+
+```{r}
+intersect(ecm_genes, ecm_genes_neurons)
+
+```
+
+
+
+Check out DISC1 a bit further
+
+
+
+```{r}
+all_gene_fetal_neuron_pres_mat['DISC1', ]
+org_all_gene_fetal_neuron_pres_mat['DISC1', ]
+
+
+all_org_disc1_stats = matrix(data = NA, nrow = nrow(all_sample_meta), ncol = 4, dimnames = list(all_sample_meta$sample_ids, 
+                                                                                                c('num_cells_disc1','num_cells_disc1_ratio','mean_disc1_exp','median_disc1_exp')))
+for(i in 1:nrow(all_sample_meta)){
+
+  x = load(all_sample_meta$processed_seurat_path[i])
+  dataset = get(x)
+  suppressWarnings(rm(x, seurat_object))
+  gc()
+  
+  if('DISC1' %in% rownames(dataset)){
+  
+    disc_exp = FetchData(dataset, 'DISC1')
+  
+    all_org_disc1_stats[i,'num_cells_disc1'] = sum(disc_exp$DISC1 != 0)
+    all_org_disc1_stats[i,'num_cells_disc1_ratio'] = sum(disc_exp$DISC1 != 0) / nrow(disc_exp)
+    all_org_disc1_stats[i,'mean_disc1_exp'] = mean(filter(disc_exp, DISC1 != 0)$DISC1)
+    all_org_disc1_stats[i,'median_disc1_exp'] = median(filter(disc_exp, DISC1 != 0)$DISC1)
+  }else{next}
+  print(i)
+  
+}
+
+all_org_disc1_stats = data.frame(all_org_disc1_stats)
+all_org_disc1_stats$disc1_pres_coexp = org_all_gene_fetal_neuron_pres_mat['DISC1', ]
+all_org_disc1_stats$normalization = all_sample_meta$Normalization.for.this.study
+
+norm_index = all_org_disc1_stats$normalization == 'CPM'
+
+ggplot(all_org_disc1_stats[norm_index, ], aes(x = log10(mean_disc1_exp +1), y = disc1_pres_coexp)) + geom_point()
+
+
+
+```
+
+And now the primary tissue data
+
+```{r}
+
+human_fetal_dataset_names = c( 
+                               'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
+                               'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
+                               'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
+                               'linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2',
+                               'linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13', 'linnarsson_GW14',
+                               'areal_GW14','poliodakis_geschwind_batch1', 'poliodakis_geschwind_batch2','areal_GW18_2','areal_GW19','areal_GW19_2',
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25','fan_fu','areal_GW16','areal_GW18', 'areal_GW22','areal_GW22T','shi_wang','zhou_lu',
+                               'yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4',
+                               'trevino_greenleaf_1','trevino_greenleaf_2','trevino_greenleaf_3','trevino_greenleaf_4')
+
+human_fetal_dataset_paths = list(
+                                 '../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
+                                 '../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
+                                 '../data/seurat_objs/individual/shi_wang_seurat_processed.Rdata', 
+                                 '../data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032680_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032681_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032682_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032683_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata')
+
+
+names(human_fetal_dataset_paths)= human_fetal_dataset_names 
+
+
+all_fetal_disc1_stats = matrix(data = NA, nrow = length(human_fetal_dataset_paths ), ncol = 4, dimnames = list(human_fetal_dataset_names, 
+                                                                                                c('num_cells_disc1','num_cells_disc1_ratio','mean_disc1_exp','median_disc1_exp')))
+for(i in 1:length(human_fetal_dataset_paths )){
+
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  suppressWarnings(rm(x, seurat_object, fan_fu_dataset, poliodakis_dataset, GW14_merged_dataset, GW17_merged_dataset, GW18_2_merged_dataset,
+                      GW19_merged_dataset,GW19_2_merged_dataset,
+                      GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW25_merged_dataset, shi_wang_dataset,
+                      zhou_lu_dataset,trevino_dataset_batch1,trevino_dataset_batch2,trevino_dataset_batch3,trevino_dataset_batch4,
+                      GW16_merged_dataset, GW18_merged_dataset, GW22_merged_dataset, GW22T_merged_dataset))
+  gc()
+  
+  if('DISC1' %in% rownames(dataset)){
+  
+    disc_exp = FetchData(dataset, 'DISC1')
+  
+    all_fetal_disc1_stats[i,'num_cells_disc1'] = sum(disc_exp$DISC1 != 0)
+    all_fetal_disc1_stats[i,'num_cells_disc1_ratio'] = sum(disc_exp$DISC1 != 0) / nrow(disc_exp)
+    all_fetal_disc1_stats[i,'mean_disc1_exp'] = mean(filter(disc_exp, DISC1 != 0)$DISC1)
+    all_fetal_disc1_stats[i,'median_disc1_exp'] = median(filter(disc_exp, DISC1 != 0)$DISC1)
+  }else{next}
+  rm(dataset)
+  gc()
+  print(i)
+  
+}
+
+all_fetal_disc1_stats = data.frame(all_fetal_disc1_stats)
+#Only have data for the annotated datasets
+all_fetal_disc1_stats = all_fetal_disc1_stats[1:37, ]
+
+
+all_fetal_disc1_stats$disc1_pres_coexp = all_gene_fetal_neuron_pres_mat['DISC1', ]
+
+rownames(all_fetal_disc1_stats)[rownames(all_fetal_disc1_stats) == 'poliodakis_geschwind_batch1'] = 'poliodakis_batch1'
+rownames(all_fetal_disc1_stats)[rownames(all_fetal_disc1_stats) == 'poliodakis_geschwind_batch2'] = 'poliodakis_batch2'
+
+index = match(rownames(all_fetal_disc1_stats), names(all_gene_fetal_neuron_pres_mat['DISC1', ]))
+all_fetal_disc1_stats$disc1_pres_coexp = all_gene_fetal_neuron_pres_mat['DISC1', index ]
+
+ggplot(all_fetal_disc1_stats, aes(x = mean_disc1_exp, y = disc1_pres_coexp)) + geom_point()
+
+
+
+
+
+
+```
+
+```{r}
+
+org_for_joining = all_org_disc1_stats[norm_index, ][ ,1:5]
+org_for_joining$data_label = rep('organoid', length = nrow(org_for_joining))
+  
+all_fetal_disc1_stats$data_label = rep('primary tissue', length = nrow(all_fetal_disc1_stats)) 
+
+all_disc1_data = rbind(all_fetal_disc1_stats, org_for_joining)
+   
+
+save(all_disc1_data, file = "../data/coexpression/all_gene_presCoexp/disc1_data.Rdata")
+
+
+ggplot(all_disc1_data, aes(x = log10(mean_disc1_exp +1), y = disc1_pres_coexp, color = data_label)) + geom_point() + xlab('log10(CPM + 1)') + 
+  ylab('Preserved Coexpression DISC1 AUROC')
+
+ggsave(filename = 'disc1_scatter.pdf', device = 'pdf', path = 'graphs/organoid_ind_gene_presCoexp/', useDingbats = F, width = 4, height = 4)
+
+
+g1 = ggplot(all_disc1_data, aes(x = data_label, y = log10(mean_disc1_exp +1))) + geom_boxplot() + ylab('log10(CPM + 1)')
+g2 = ggplot(all_disc1_data, aes(x = data_label, y = disc1_pres_coexp)) + geom_boxplot() + ylab('Preserved Coexpression DISC1 AUROC')
+g3 = gridExtra::grid.arrange(g1, g2, nrow = 1)
+ggsave(filename = 'disc1_boxplots.pdf', device = 'pdf', path = 'graphs/organoid_ind_gene_presCoexp/', useDingbats = F, width = 5, height = 4, plot = g3)
+```
+
+
+
+
+
+
+

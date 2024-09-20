@@ -1,0 +1,1245 @@
+
+Going through each organoid dataset individually for processing
+Load up the downloaded data and split datasets accordingly. Cell lines, age, batch, which ever batch information is provided
+Get the QC metrics and normalize each dataset
+Save a final processed seurat object for each dataset
+
+
+```{r}
+library(Seurat)
+library(data.table)
+library(ggplot2)
+library(dplyr)
+library(Matrix)
+library(tidyr)
+
+
+```
+
+
+```{r}
+#Function to load up the datasets with 10X expected output
+load_10X_output_dataset = function(file_path, sample_name){
+  data = Read10X(data.dir = file_path)
+  seurat_object = CreateSeuratObject(counts = data, project = sample_name )
+  return(seurat_object)
+}
+
+#Function to load up the datasets with matrix expected output
+load_matrix_output_dataset = function(file_path, sample_name){
+  
+  data = fread(file_path)
+  feature_names = data[[1]]
+  data = data[ ,2:dim(data)[2]]
+  data = as.sparse(data)
+  rownames(data) = feature_names
+  seurat_object = CreateSeuratObject(counts = data, project = sample_name)
+
+  return(seurat_object)
+}
+```
+
+
+Save individual seurat objects here
+```{r}
+all_org_ind_path = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/organoids/' 
+
+```
+
+
+Fleck et al 2022
+Inferring and perturbing cell fate regulomes in human brain organoids
+
+```{r}
+#Author made available metadata
+fleck_metadata = read.csv(file = '/home/werner/projects/meta_qc_organoid/datasets/fleck_2022/data_matrices/meta.tsv', header = T, sep = '\t' )
+
+#Only one column for genes
+data = Read10X(data.dir = '/home/werner/projects/meta_qc_organoid/datasets/fleck_2022/data_matrices', gene.column=1 )
+dataset_object = CreateSeuratObject(counts = data, project = 'fleck_2022')
+
+
+#The barcodes line up between the data and metadata
+table(colnames(dataset_object) == fleck_metadata$cellID)
+
+dataset_object$sample = fleck_metadata$sample
+dataset_object$line = fleck_metadata$line
+dataset_object$n_cells_RNA = fleck_metadata$n_cells_RNA
+dataset_object$lineage = fleck_metadata$lineage
+
+
+table(dataset_object$orig.ident)
+#Grab the RNA data for each cell line and save separately
+table(filter(dataset_object[[]], orig.ident == 'RNA')$line)
+
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'RNA' & line == '409b2')
+save(seurat_object, file = paste0(all_org_ind_path,'fleck_2022_409b2_seurat.Rdata'))
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'RNA' & line == 'H9')
+save(seurat_object, file = paste0(all_org_ind_path,'fleck_2022_H9_seurat.Rdata'))
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'RNA' & line == 'Hoik1')
+save(seurat_object, file = paste0(all_org_ind_path,'fleck_2022_Hoik1_seurat.Rdata'))
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'RNA' & line == 'Wibj2')
+save(seurat_object, file = paste0(all_org_ind_path,'fleck_2022_Wibj2_seurat.Rdata'))
+
+```
+
+
+Field et al 2019
+GSE106245
+```{r}
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867931',
+                                        sample_name = 'field_2019_GSM2867931')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867931_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867932',
+                                        sample_name = 'field_2019_GSM2867932')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867932_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867933',
+                                        sample_name = 'field_2019_GSM2867933')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867933_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867934',
+                                        sample_name = 'field_2019_GSM2867934')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867934_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867935',
+                                        sample_name = 'field_2019_GSM2867935')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867935_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867936',
+                                        sample_name = 'field_2019_GSM2867936')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867936_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE106245/GSM2867937',
+                                        sample_name = 'field_2019_GSM2867937')
+save(seurat_object, file = paste0(all_org_ind_path,'field_2019_GSM2867937_seurat.Rdata'))
+
+
+```
+
+
+Xiang et al. 2019
+Dataset has early and late cells, Day34 and Day 89
+Early cells are -1 in the barcodes and Day89 are -2
+Save separately
+```{r}
+
+dataset_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE122342/GSE122342', sample_name = 'xiang_2019_GSE122342')
+
+dataset_object[[]]
+
+age = sapply(strsplit(colnames(dataset_object), split = '-', fixed = T),'[[', 2)
+age[age == '1'] = 'Day34'
+age[age == '2'] = 'Day89'
+
+dataset_object$age = age
+table(dataset_object$age)
+
+seurat_object = subset(dataset_object, subset = age == 'Day34' )
+ncol(seurat_object)
+save(seurat_object, file = paste0(all_org_ind_path,'xiang_2019_day34_seurat.Rdata'))
+
+seurat_object = subset(dataset_object, subset = age == 'Day89' )
+ncol(seurat_object)
+save(seurat_object, file = paste0(all_org_ind_path,'xiang_2019_day89_seurat.Rdata'))
+
+```
+
+Velasco et al. 2019
+GSE129519
+
+```{r}
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_11a.6mon.txt',
+                                           sample_name = 'velasco_2019_11a_6mon')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_11a_6mon_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_GM.6mon.txt',
+                                           sample_name = 'velasco_2019_GM.6mon')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_GM_6mon_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_HUES66.3mon.txt',
+                                           sample_name = 'velasco_2019_HUES66_3mon')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_HUES66_3mon_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_PGP1.3mon.batch2.txt',
+                                           sample_name = 'velasco_2019_PGP1_3mon_batch2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_PGP1_3mon_batch2_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_PGP1.3mon.txt',
+                                           sample_name = 'velasco_2019_PGP1_3mon')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_PGP1_3mon_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_PGP1.6mon.batch3.txt',
+                                           sample_name = 'velasco_2019_PGP1_6mon_batch3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_PGP1_6mon_batch3_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE129519/GSE129519_expression_PGP1.6mon.txt',
+                                           sample_name = 'velasco_2019_PGP1_6mon')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'velasco_2019_PGP1_6mon_seurat.Rdata'))
+
+
+```
+
+
+Shi et al. 2020
+GSE131094
+Cell barcodes have batch information
+Split by vascularization and age
+
+```{r}
+dataset_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE131094/GSE131094_matrix.txt',
+                                            sample_name = 'shi_2020')
+
+dataset_object[[]]
+
+batch_id = colnames(dataset_object)
+
+#Split the ensemble and gene symbol ids
+batch_id = tibble(string = batch_id) %>% 
+  separate(
+    string, into = c("barcode", "batch_id"), sep = "[_]", extra = "merge"
+  ) %>% pull(batch_id)
+
+table(batch_id)
+dataset_object$batch_id = batch_id
+#D100
+#Rep 1
+seurat_object = subset(dataset_object, subset = batch_id == 'h9_d100_rep1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_h9_d100_rep1_seurat.Rdata'))
+#rep 2
+seurat_object = subset(dataset_object, subset = batch_id == 'h9_d100_rep2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_h9_d100_rep2_seurat.Rdata'))
+#Rep 3
+seurat_object = subset(dataset_object, subset = batch_id == 'h9_d100_rep3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_h9_d100_rep3_seurat.Rdata'))
+
+
+#D65
+#Rep 1
+seurat_object = subset(dataset_object, subset = batch_id == 'h9_d65_rep1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_h9_d65_rep1_seurat.Rdata'))
+#rep 2
+seurat_object = subset(dataset_object, subset = batch_id == 'h9_d65_rep2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_h9_d65_rep2_seurat.Rdata'))
+#Rep 3
+seurat_object = subset(dataset_object, subset = batch_id == 'h9_d65_rep3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_h9_d65_rep3_seurat.Rdata'))
+
+
+#D100 vascular
+#Rep 1
+seurat_object = subset(dataset_object, subset = batch_id == 'huvec_d100_rep1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_vascularH9_d100_rep1_seurat.Rdata'))
+#rep 2
+seurat_object = subset(dataset_object, subset = batch_id == 'huvec_d100_rep2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_vascularH9_d100_rep2_seurat.Rdata'))
+#Rep 3
+seurat_object = subset(dataset_object, subset = batch_id == 'huvec_d100_rep3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_vascularH9_d100_rep3_seurat.Rdata'))
+
+#d65 vascular
+#Rep 1
+seurat_object = subset(dataset_object, subset = batch_id == 'huvec_d65_rep1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_vascularH9_d65_rep1_seurat.Rdata'))
+#rep 2
+seurat_object = subset(dataset_object, subset = batch_id == 'huvec_d65_rep2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_vascularH9_d65_rep2_seurat.Rdata'))
+#Rep 3
+seurat_object = subset(dataset_object, subset = batch_id == 'huvec_d65_rep3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'shi_2020_vascularH9_d65_rep3_seurat.Rdata'))
+
+
+```
+
+Qian et al. 2020
+GSE137941
+```{r}
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE137941/GSM4094681_C1_150d_fseq12BC77_S2.deg.txt',
+                                           sample_name = 'qian_2020')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'qian_2020_GSE137941_seurat.Rdata'))
+
+```
+
+Khan et al. 2020
+GSE145122
+```{r}
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE145122/GSM4306931', 
+                                        sample_name = 'khan_2020_GSM4306931')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'khan_2020_GSM4306931_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE145122/GSM4306932', 
+                                        sample_name = 'khan_2020_GSM4306932')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'khan_2020_GSM4306932_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE145122/GSM4306933', 
+                                        sample_name = 'khan_2020_GSM4306933')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'khan_2020_GSM4306933_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE145122/GSM4306934', 
+                                        sample_name = 'khan_2020_GSM4306934')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'khan_2020_GSM4306934_seurat.Rdata'))
+
+```
+
+Eura et al. 2020
+GSE145306
+```{r}
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE145306/GSM4314535_brainstem_10x_mat_count_qc.csv',
+                                           sample_name = 'eura_2020')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'eura_2020_GSM4314535_seurat.Rdata'))
+
+```
+
+Nayler et al. 2021
+GSE150153
+```{r}
+seurat_object = readRDS(file = '/home/werner/projects/meta_qc_organoid/datasets/GSE150153/GSM4524697/GSM4524697_NAY6153A1_125.rds')
+seurat_object = UpdateSeuratObject(object = seurat_object)
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'nayler_2021_GSM4524697_seurat.Rdata'))
+
+seurat_object = readRDS(file = '/home/werner/projects/meta_qc_organoid/datasets/GSE150153/GSM4524699/GSM4524699_NAY6153A2_678.rds')
+seurat_object = UpdateSeuratObject(object = seurat_object)
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'nayler_2021_GSM4524697_seurat.Rdata'))
+
+```
+
+
+Fair et al. 2020
+GSE157019
+
+```{r}
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157019/GSM4750931',
+                                        sample_name = 'fair_2020_GSM4750931')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'fair_2020_GSM4750931_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157019/GSM4750932',
+                                        sample_name = 'fair_2020_GSM4750932')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'fair_2020_GSM4750932_seurat.Rdata'))
+
+```
+
+Parisian et al. 2020
+GSE157525
+```{r}
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157525/GSM4769380',
+                                        sample_name = 'parisian_2020_GSM4769380')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'parisian_2020_GSM4769380_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157525/GSM4769381',
+                                        sample_name = 'parisian_2020_GSM4769381')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'parisian_2020_GSM4769381_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157525/GSM4769382',
+                                        sample_name = 'parisian_2020_GSM4769382')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'parisian_2020_GSM4769382_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157525/GSM4769383',
+                                        sample_name = 'parisian_2020_GSM4769383')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'parisian_2020_GSM4769383_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157525/GSM4769384',
+                                        sample_name = 'parisian_2020_GSM4769384')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'parisian_2020_GSM4769384_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE157525/GSM4769385',
+                                        sample_name = 'parisian_2020_GSM4769385')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'parisian_2020_GSM4769385_seurat.Rdata'))
+
+
+
+```
+
+Chen et al. 2021
+GSE164089
+```{r}
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164089/GSM4996460',
+                                        sample_name = 'chen_2021_GSM4996460')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'chen_2021_GSM4996460_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164089/GSM4996461',
+                                        sample_name = 'chen_2021_GSM4996461')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'chen_2021_GSM4996461_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164089/GSM4996462',
+                                        sample_name = 'chen_2021_GSM4996462')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'chen_2021_GSM4996462_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164089/GSM4996463',
+                                        sample_name = 'chen_2021_GSM4996463')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'chen_2021_GSM4996463_seurat.Rdata'))
+
+
+```
+
+Huang et al. 2021
+GSE164102
+```{r}
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996689_DGE67anew.txt',
+                                           sample_name = 'huang_2021_GSM4996689')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996689_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996690_DGE67bnew.txt',
+                                           sample_name = 'huang_2021_GSM4996690')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996690_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996691_DGE69new.txt',
+                                           sample_name = 'huang_2021_GSM4996691')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996691_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996692_DGE68new.txt',
+                                           sample_name = 'huang_2021_GSM4996692')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996692_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996693_DGE70new.txt',
+                                           sample_name = 'huang_2021_GSM4996693')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996693_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996694_DGE66new.txt',
+                                           sample_name = 'huang_2021_GSM4996694')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996694_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996695_DGE71new.txt',
+                                           sample_name = 'huang_2021_GSM4996695')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996695_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996696_DGE7374.txt',
+                                           sample_name = 'huang_2021_GSM4996696')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996696_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996697_DGE7778.txt',
+                                           sample_name = 'huang_2021_GSM4996697')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996697_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996698_DGE7576.txt',
+                                           sample_name = 'huang_2021_GSM4996698')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996698_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996699_DGE7980.txt',
+                                           sample_name = 'huang_2021_GSM4996699')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996699_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996700_DGE72.txt',
+                                           sample_name = 'huang_2021_GSM4996700')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996700_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164102/GSM4996701_DGE81.txt',
+                                           sample_name = 'huang_2021_GSM4996701')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'huang_2021_GSM4996701_seurat.Rdata'))
+
+
+
+```
+
+
+
+Dailamy et al. 2021
+GSE164268
+
+```{r}
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164268/GSM5005486',
+                                        sample_name = 'dailamy_2021_GSM5005486')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'dailamy_2021_GSM5005486_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164268/GSM5005487',
+                                        sample_name = 'dailamy_2021_GSM5005487')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'dailamy_2021_GSM5005487_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE164268/GSM5005488',
+                                        sample_name = 'dailamy_2021_GSM5005488')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'dailamy_2021_GSM5005488_seurat.Rdata'))
+
+```
+
+
+Fiorenzano et al. 2021
+GSE168323
+Theres a lot of datasets, so just loop through them, all the same format
+```{r}
+
+dataset_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE168323'
+
+all_files = list.files(dataset_path)
+all_files = all_files[grepl('csv', all_files)]
+
+
+for(i in 1:length(all_files)){
+
+  s_name =  paste('fiorenzo_2021',all_files[i], sep = '_')
+  seurat_object = load_matrix_output_dataset(file_path = paste(dataset_path, all_files[i], sep = '/'), 
+                                             sample_name = s_name)
+  print(ncol(seurat_object))
+  save(seurat_object,file =  paste0(paste0(all_org_ind_path, s_name), '_seurat.Rdata') )
+
+}
+
+
+```
+
+
+Fernando et al. 2022
+GSE174232
+
+```{r}
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE174232/GSM5289680_Raw_gene_counts_matrix.txt',
+                                           sample_name = 'fernando_2022_GSM5289680')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'fernando_2022_GSM5289680_seurat.Rdata'))
+
+```
+
+Szebényi et al. 2021
+GSE180122
+data was made available in two batches. Splitting the data by cell-line and condition
+they made organoids from patients with ALS/FTD
+C9S1 and C9S2 are the CS30iALS-C9nxx ALS/FTD line
+EpiC and EpiC2 are the normal A18945 line
+WT and WTs1 are the WTSli042-B line
+CS29A and CS29B are the CS29iALS-C9nxx ALS/FTD line
+ISOA and ISOB are the isogenetic line for CS29A and CS29B
+
+
+```{r}
+
+dataset_object_batch_1 = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE180122/GSE180122_C9_batch1_data.csv',
+                                                    sample_name = 'szebenyi_2021_batch1')
+
+table(dataset_object_batch_1$orig.ident)
+
+seurat_object = subset(dataset_object_batch_1, subset = orig.ident == 'WT')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_WT1_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_1, subset = orig.ident == 'WTS1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_WT2_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_1, subset = orig.ident == 'EpiC')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_WT3_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_1, subset = orig.ident == 'EpiC2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_WT4_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_1, subset = orig.ident == 'C9S1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_FTD1_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_1, subset = orig.ident == 'C9S2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_FTD2_seurat.Rdata'))
+
+
+dataset_object_batch_2 = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE180122/GSE180122_C9_batch2_data.csv',
+                                                    sample_name = 'szebenyi_2021_batch2')
+
+table(dataset_object_batch_2$orig.ident)
+
+seurat_object = subset(dataset_object_batch_2, subset = orig.ident == 'CS29A')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_FTD3_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_2, subset = orig.ident == 'CS29B')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_FTD4_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_2, subset = orig.ident == 'ISOA')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_ISO1_seurat.Rdata'))
+
+seurat_object = subset(dataset_object_batch_2, subset = orig.ident == 'ISOB')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'szebenyi_2021_ISO2_seurat.Rdata'))
+
+```
+
+Popova et al. 2021
+GSE180945
+
+```{r}
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE180945/GSM5478754',
+                                        sample_name = 'popova_2021_GSM5478754')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'popova_2021_GSM5478754_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE180945/GSM5478755',
+                                        sample_name = 'popova_2021_GSM5478755')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'popova_2021_GSM5478755_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE180945/GSM5478756',
+                                        sample_name = 'popova_2021_GSM5478756')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'popova_2021_GSM5478756_seurat.Rdata'))
+
+
+```
+
+
+Suong et al. 2021
+GSE184409
+```{r}
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE184409/GSM5587100',
+                                        sample_name = 'suong_2021_GSM5587100')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'suong_2021_GSM5587100_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE184409/GSM5587101',
+                                        sample_name = 'suong_2021_GSM5587101')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'suong_2021_GSM5587101_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE184409/GSM5587102',
+                                        sample_name = 'suong_2021_GSM5587102')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'suong_2021_GSM5587102_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE184409/GSM5587103',
+                                        sample_name = 'suong_2021_GSM5587103')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'suong_2021_GSM5587103_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE184409/GSM5587104',
+                                        sample_name = 'suong_2021_GSM5587104')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'suong_2021_GSM5587104_seurat.Rdata'))
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE184409/GSM5587105',
+                                        sample_name = 'suong_2021_GSM5587105')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'suong_2021_GSM5587105_seurat.Rdata'))
+
+```
+
+Quadrato et al. 2017
+GSE86153
+
+```{r}
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE86153/GSM2295946_dge.3m.csv',
+                                           sample_name = 'quadrato_2017_GSM2295946_3month')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'quadrato_2017_GSM2295946_3month_seurat.Rdata'))
+
+seurat_object = load_matrix_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE86153/GSM2295945_dge.6m.csv',
+                                           sample_name = 'quadrato_2017_GSM2295945_6month')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'quadrato_2017_GSM2295945_6month_seurat.Rdata'))
+
+
+```
+Xiang et al. 2017
+GSE98201
+Need to split the dataset by type of organoid, cortical or MGE, and age
+Info is in the cell barcode
+1       early hCO rep1  GSM2589130
+2       early hMGEO rep1        GSM2589129
+3       early hMGEO rep2        GSM2684867
+4       early hCO rep2  GSM2684868
+5       late hMGEO rep1 GSM2589131
+6       late hCO rep1   GSM2589132
+7       late hMGEO rep2 GSM2684869
+8       late hCO rep2   GSM2684870
+
+```{r}
+
+dataset_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE98201/GSE98201',
+                                         sample_name = 'xiang_2017')
+
+batch_id = colnames(dataset_object)
+batch_id  = sapply(strsplit(batch_id, split = '-', fixed = T), '[[', 2)
+table(batch_id)
+
+dataset_object$batch_id = batch_id
+
+seurat_object = subset(dataset_object, subset = batch_id == '1' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2589130_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '2' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2589129_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '3' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2684867_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '4' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2684868_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '5' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2589131_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '6' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2589132_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '7' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2684869_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = batch_id == '8' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'xiang_2017_GSM2684870_seurat.Rdata') )
+
+
+```
+
+
+Revah et al. 2022
+GSE190815
+split up the transplanted and non-transplanted datasets by age
+d227 GSM6225775
+d257 GSM6225774
+d236-251 GSM5732394
+
+transplanted
+d224 H1 GSM5732393
+d227 GSM6225773
+d276 H4 GSM5732392
+
+```{r}
+
+dataset_object = readRDS('/home/werner/projects/meta_qc_organoid/datasets/GSE190815/GSE190815_hCS_processed_SeuratObject.rds')
+dataset_object = UpdateSeuratObject(object = dataset_object)
+dataset_object[[]]
+
+table(dataset_object$orig.ident)
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'InVitro_5_d227')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'revah_2022_GSM6225775_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'InVitro_4_d257')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'revah_2022_GSM6225774_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'vitro3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'revah_2022_GSM5732394_seurat.Rdata') )
+
+
+dataset_object = readRDS('/home/werner/projects/meta_qc_organoid/datasets/GSE190815/GSE190815_t-hCS_processed_SeuratObject.rds')
+dataset_object = UpdateSeuratObject(object = dataset_object)
+dataset_object[[]]
+
+table(dataset_object$orig.ident)
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'H1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'revah_2022_GSM5732393_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'H4')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'revah_2022_GSM5732392_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'InVivo_3_d227')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'revah_2022_GSM6225773_seurat.Rdata') )
+
+```
+
+Pellegrini et al. 2020
+GSE150903
+1 choroid day27 GSM4560461
+2 choroid day46 GSM4560462
+3 choroid day53 GSM4560463
+T telencephalon GSM4560460
+
+```{r}
+dataset_object = load_matrix_output_dataset(file_path = 
+                                             '/home/werner/projects/meta_qc_organoid/datasets/GSE150903/GSE150903_SCT_scaled_count_matrix.txt.gz',
+                                           sample_name = 'pellegrini_2020')
+dataset_object[[]]
+table(dataset_object$orig.ident)
+
+seurat_object = subset(dataset_object, subset = orig.ident == '1' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'pellegrini_2020_GSM4560461_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == '2' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'pellegrini_2020_GSM4560462_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == '3' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'pellegrini_2020_GSM4560463_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = orig.ident == 'T' )
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'pellegrini_2020_GSM4560460_seurat.Rdata') )
+
+
+```
+
+
+Vértesy et al. 2022
+GSE205554
+
+Has several datasets, including some I already grabbed
+Keep
+Bhaduri et al. 2022
+Eichmueller et al. 2022
+Kanton et al. 2019
+Vértesy et al. 2022
+These each have separate batches as well
+
+ignore Velasco and Khan
+
+```{r}
+
+dataset_object = readRDS(file ='/home/werner/projects/meta_qc_organoid/datasets/GSE205554/GSE205554_integration_all_preGruffi.Rds.gz')
+dataset_object[[]]
+
+
+
+seurat_object = subset(dataset_object, subset = project == 'Bha' & orig.ident == 'H1SWeek10')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_bhaduri_H1SWeek10_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Bha' & orig.ident == 'H28126SWeek10')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_bhaduri_H28126SWeek10_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Bha' & orig.ident == 'wk24H1S')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_bhaduri_wk24H1S_seurat.Rdata') )
+
+
+seurat_object = subset(dataset_object, subset = project == 'Eic' & orig.ident == '122580.WT')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_eichmueller_122580.WT_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Eic' & orig.ident == '81949.WT')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_eichmueller_81949.WT_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Eic' & orig.ident == '82546.WT')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_eichmueller_82546.WT_seurat.Rdata') )
+
+
+seurat_object = subset(dataset_object, subset = project == 'Kan' & orig.ident == 'KAN025')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_kanton_KAN025_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Kan' & orig.ident == 'KAN026')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_kanton_KAN026_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Kan' & orig.ident == 'KAN030')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_kanton_KAN030_seurat.Rdata') )
+
+
+
+seurat_object = subset(dataset_object, subset = project == 'Ver' & orig.ident == '124719')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_vertesy_124719_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Ver' & orig.ident == 'TK297s1')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_vertesy_TK297s1_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Ver' & orig.ident == 'TK297s2')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_vertesy_TK297s2_seurat.Rdata') )
+
+seurat_object = subset(dataset_object, subset = project == 'Ver' & orig.ident == 'TK297s3')
+ncol(seurat_object)
+save(seurat_object, file =  paste0(all_org_ind_path,'vertesy_2022_vertesy_TK297s3_seurat.Rdata') )
+
+```
+
+Banfi et al. 2021
+GSE171263
+
+Something is off with the raw data, just skip this dataset
+```{r}
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE171263/GSM5221533', 
+                                        sample_name = 'banfi_2021_GSM5221533')
+ncol(seurat_object)
+#save(seurat_object, file =  paste0(all_org_ind_path,'banfi_2021_GSM5221533_seurat.Rdata') )
+
+
+seurat_object = load_10X_output_dataset(file_path = '/home/werner/projects/meta_qc_organoid/datasets/GSE171263/GSM5221534', 
+                                        sample_name = 'banfi_2021_GSM5221534')
+ncol(seurat_object)
+#save(seurat_object, file =  paste0(all_org_ind_path,'banfi_2021_GSM5221534_seurat.Rdata') )
+
+```
+
+
+
+
+
+
+
+
+
+#########################
+Now run through each dataset, 
+filter out on the same QC stats
+Normalize
+and save
+
+Dont need to normalize the datasets that did not make the raw counts available
+Also cant filter on counts for the datasets that did not make the raw counts available
+##############################
+
+
+
+```{r}
+
+already_norm = c('velasco','shi','szebenyi','quadrato','pellegrini')
+
+
+organoid_path = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/organoids'
+all_raw_datasets = list.files(organoid_path)
+#Already did the arlotta atlas datasets on its own. Ignore already processed datasets
+all_raw_datasets = all_raw_datasets[!grepl('arlotta', all_raw_datasets)]
+all_raw_datasets = all_raw_datasets[!grepl('processed', all_raw_datasets)]
+all_studies = sapply(strsplit(all_raw_datasets, split = '_', fixed = T),'[[', 1)
+length(all_raw_datasets)
+length(all_studies)
+
+for(i in 1:length(all_raw_datasets)){
+
+  load(paste(organoid_path, all_raw_datasets[i], sep = '/'))
+  #For the datasets that have mutiple assays already
+  DefaultAssay(seurat_object) = 'RNA'
+
+  seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
+  seurat_object = subset(seurat_object, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000 )
+  seurat_object
+  #Normalize if needed, otherwise just swap the counts with the data slot, using the author provided normalization
+  if(!all_studies[i] %in% already_norm){
+    seurat_object = NormalizeData(seurat_object, verbose = F, normalization.method = 'RC', scale.factor = 1e6, assay = 'RNA')
+  }else{seurat_object@assays$RNA@data = seurat_object@assays$RNA@counts }
+  
+  seurat_object= FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000, verbose = F, assay = 'RNA')
+  all.genes <- rownames(seurat_object)
+  seurat_object = ScaleData(seurat_object , features = all.genes, verbose = F, assay = 'RNA')
+  seurat_object = RunPCA(seurat_object, features = VariableFeatures(object = seurat_object), verbose = F, assay = 'RNA')
+  seurat_object = RunUMAP(seurat_object, dims = 1:20, verbose = F, assay = 'RNA')
+  
+  sample_name = sapply(strsplit(all_raw_datasets[i], split = '.', fixed = T),'[[', 1)
+  sample_name = paste0(sample_name, '_processed.Rdata')
+
+  save(seurat_object, file = paste(organoid_path,sample_name, sep = '/') )
+
+  print(i)
+  rm(seurat_object)
+  gc()
+
+}
+
+
+```
+
+
+#######################
+Load in the metadata, which I pulled together in excel looking through all the datasets
+Get the number of cells before and after filtering
+
+And then should be good to go ahead with the co-expression analyses
+######################
+
+
+
+
+
+Get the order of datasets as they will appear, in order to align the sample metadata
+```{r}
+
+organoid_path = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/organoids'
+all_raw_datasets = list.files(organoid_path)
+#Just get the processed datasets
+all_processed_datasets = all_raw_datasets[grepl('processed', all_raw_datasets)]
+#Skip over the integrated arlotta datasets
+all_processed_datasets = all_processed_datasets[-c(3,8,11, 14, 21, 24, 27, 34)]
+
+all_processed_datasets
+
+
+all_unprocessed_datasets = all_raw_datasets[!grepl('processed', all_raw_datasets)]
+```
+
+
+
+load in sample metadata
+
+```{r}
+
+sample_meta = read.csv('/home/werner/projects/meta_qc_organoid/data/seurat_objs/revised_org_sample_metadata_v2.csv', header = T)
+sample_meta = sample_meta[1:173, ] #dropping the fetal data
+
+table(sample_meta$Protocol.classification)
+
+```
+
+add processed sample paths to seurat objects
+
+```{r}
+#Unprocessed data
+all_paths = paste(organoid_path, all_unprocessed_datasets, sep = '/')
+length(all_paths)
+#Did not save the unprocessed individual arlotta datasets
+sample_meta$unprocessed_seurat_path[27:nrow(sample_meta)] = all_paths
+
+#Processed data
+all_paths = paste(organoid_path, all_processed_datasets, sep = '/')
+sample_meta$processed_seurat_path = all_paths
+sample_meta
+```
+
+
+Now go through and get the number of cells before QC
+And then the number of cells after QC, as well as the mean and median Mito %, feature, and count numbers.
+Count numbers will not mean anything for the datasets that were made available already normalized, but still grab it.
+
+Will need to grab the preprocessed arlotta cell numbers indivudally first, since I processed those separately
+Cant load them all up at the same time, just go through each individually
+
+```{r}
+org_23days = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/23d_harmonizedObj_060421.rds')
+org_1month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/1mo_harmonizedObj_111520_final.rds')
+org_1.5month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/1.5mo_harmonizedObj_060421.rds')
+org_2month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/2mo_harmonizedObj_060421.rds')
+org_3month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/3mo_harm_111120.rds')
+org_4month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/4mo_harm_060421.rds')
+org_5month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/5mo_harmonizedObj_060421_3.rds')
+org_6month = readRDS('/home/werner/projects/meta_qc_organoid/datasets/arlotta_organoid_atlas/6mo_harm_111120.rds')
+
+```
+
+
+```{r}
+
+pre_qc_cell_num = vector(mode = 'numeric', length = nrow(sample_meta))
+
+#table(org_23days$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_7'] = 9831
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_8'] = 19905
+
+#table(org_1month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_3'] = 18875
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_4'] = 26702
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_5'] = 13833
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_6'] = 11962
+
+#table(org_1.5month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_1'] = 18083
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_2'] = 20491
+
+#table(org_2month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_9'] = 16561
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_10'] = 22738
+
+#batch6 was completely filtered out, so just skip that one
+#table(org_3month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_11'] = 24437
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_12'] = 32959
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_13'] = 18694
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_14'] = 20964
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_15'] = 17059
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_16'] = 27646
+
+#table(org_4month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_17'] = 19771 #PGP1 dataset
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_18'] = 18577 #Mito dataset
+
+#table(org_5month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_19'] = 14476 #Mito dataset
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_20'] = 17311 #PGP1 dataset
+
+#batch6 was completely filtered out, so just skip that one
+#table(org_6month$dataset)
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_21'] = 25618 
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_22'] = 15256 
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_23'] = 19294 
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_24'] = 16155 
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_25'] = 11475 
+pre_qc_cell_num[sample_meta$sample_ids == 'uzquiano_26'] = 14754 
+```
+
+```{r}
+rm(org_1.5month, org_1month, org_23days, org_2month, org_3month, org_4month, org_5month, org_6month, dataset)
+gc()
+pre_qc_cell_num
+```
+
+
+Now run through and load up all the remaining unprocessed datasets to get the cell numbers
+
+```{r}
+
+for(i in 27:nrow(sample_meta)){
+
+  x = load(sample_meta$unprocessed_seurat_path[i])
+  current_dataset = get(x)
+  rm(seurat_object, x)
+  gc()
+
+  pre_qc_cell_num[i] = ncol(current_dataset)
+  print(i)
+  
+}
+pre_qc_cell_num
+
+sample_meta$pre_qc_cell_number = pre_qc_cell_num
+
+```
+
+And now go through all the processed datasets 
+Get the cell number, mean and median for mitochondrial, feature, and counts
+
+```{r}
+post_qc_cell_num = vector(mode = 'numeric', length = nrow(sample_meta))
+median_mito = vector(mode = 'numeric', length = nrow(sample_meta))
+mean_mito = vector(mode = 'numeric', length = nrow(sample_meta))
+median_feature = vector(mode = 'numeric', length = nrow(sample_meta))
+mean_feature = vector(mode = 'numeric', length = nrow(sample_meta))
+median_count = vector(mode = 'numeric', length = nrow(sample_meta))
+mean_count = vector(mode = 'numeric', length = nrow(sample_meta))
+
+for(i in 1:nrow(sample_meta)){
+
+  x = load(sample_meta$processed_seurat_path[i])
+  current_dataset = get(x)
+  suppressWarnings(rm(seurat_object, x, dataset))
+  gc()
+
+  post_qc_cell_num[i] = ncol(current_dataset)
+  mean_count[i] = mean(current_dataset$nCount_RNA)
+  median_count[i] = median(current_dataset$nCount_RNA)
+  mean_feature[i] = mean(current_dataset$nFeature_RNA)
+  median_feature[i] = median(current_dataset$nFeature_RNA)
+  #Some datasets had a different label for the mitochondrial percentage
+  data_mito = colnames(current_dataset[[]]) %in% c('percent.mito','percent.mt')
+  if(sum(data_mito) == 2){ #If i added the percent.mt to a dataset with percent.mito, just use the percent.mt
+    mean_mito[i] = mean(current_dataset[[]][,data_mito][ ,2])
+    median_mito[i] = median(current_dataset[[]][,data_mito][ ,2])
+    print(i)
+    next
+  }
+  
+  mean_mito[i] = mean(current_dataset[[]][,data_mito])
+  median_mito[i] = median(current_dataset[[]][,data_mito])
+  
+  print(i)
+  
+}
+
+
+
+```
+
+```{r}
+sample_meta$post_qc_cell_number = post_qc_cell_num
+sample_meta$mean_mito = mean_mito
+sample_meta$median_mito = median_mito
+sample_meta$mean_feature = mean_feature
+sample_meta$median_feature = median_feature
+sample_meta$mean_count = mean_count
+sample_meta$median_count = median_count
+
+sample_meta
+
+
+write.csv(sample_meta, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/revised_all_data_just_meta_v2.csv', row.names = F)
+```
+
+
+```{r}
+
+temp = read.csv(file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/revised_all_data_just_meta_v2.csv')
+temp 
+```
+
+
+
+```{r}
+
+save(sample_meta,file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/revised_all_data_just_meta_v2.Rdata' )
+```
+
+
+```{r}
+
+x = load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/revised_all_data_just_meta_v2.Rdata')
+temp_test = get(x)
+temp_test
+```
+
+

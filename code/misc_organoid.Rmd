@@ -1,0 +1,739 @@
+
+
+Misc. plots and things for the organoid project
+
+
+
+```{r}
+
+library(ComplexHeatmap)
+library(ggplot2)
+library(circlize)
+library(viridis)
+library(Rlab)
+
+```
+
+
+
+making visual heatmaps for metamarkers
+one plot with noist differential expression signal
+one plot with clean differential expression signal
+Showing DE cleans up as we aggregate more data
+
+
+```{r}
+
+
+low_noisy_data = rnbinom(n = 100, size =10, prob = .7)
+high_noisy_data = rnbinom(n = 100, size =10, prob = .5)
+
+low_noisy_data[as.logical(rbern(n = 100, prob = .7))] = 0
+high_noisy_data[as.logical(rbern(n = 100, prob = .5))] = 0
+
+
+top_low_noisy_mat = matrix(data = low_noisy_data, nrow = 10, ncol = 10)
+top_high_noisy_mat = matrix(data = high_noisy_data, nrow = 10, ncol = 10)
+top_matrix = cbind(top_low_noisy_mat, top_high_noisy_mat)
+
+bottom_low_noisy_mat = matrix(data = low_noisy_data, nrow = 10, ncol = 10)
+bottom_high_noisy_mat = matrix(data = high_noisy_data, nrow = 10, ncol = 10)
+bottom_matrix = cbind(bottom_high_noisy_mat, bottom_low_noisy_mat)
+
+noisy_mat = rbind(top_matrix, bottom_matrix)
+max_value = max(noisy_mat)
+
+col_fun = colorRamp2(c(0, max_value/2, max_value), c(inferno(3)[1], inferno(3)[2], inferno(3)[3]))
+pdf(file = 'graphs/misc/noisy_DE_heatmap_example.pdf', useDingbats = F, height = 2, width = 2)
+Heatmap(noisy_mat, col = col_fun, cluster_rows = F, cluster_columns = F, show_row_dend = F, show_column_dend = F, use_raster = T)
+dev.off()
+Heatmap(noisy_mat, col = col_fun, cluster_rows = F, cluster_columns = F, show_row_dend = F, show_column_dend = F, use_raster = T)
+
+low_clean_data = rnbinom(n = 100, size =10, prob = .7)
+high_clean_data = rnbinom(n = 100, size =10, prob = .25)
+
+low_clean_data[as.logical(rbern(n = 100, prob = .9))] = 0
+high_clean_data[as.logical(rbern(n = 100, prob = .2))] = 0
+
+
+top_low_clean_mat = matrix(data = low_clean_data, nrow = 10, ncol = 10)
+top_high_clean_mat = matrix(data = high_clean_data, nrow = 10, ncol = 10)
+top_matrix = cbind(top_low_clean_mat, top_high_clean_mat)
+
+bottom_low_clean_mat = matrix(data = low_clean_data, nrow = 10, ncol = 10)
+bottom_high_clean_mat = matrix(data = high_clean_data, nrow = 10, ncol = 10)
+bottom_matrix = cbind(bottom_high_clean_mat, bottom_low_clean_mat)
+
+clean_mat = rbind(top_matrix, bottom_matrix)
+max_value = max(clean_mat)
+col_fun = colorRamp2(c(0, max_value/4, max_value), c(inferno(3)[1], inferno(3)[2], inferno(3)[3]))
+
+pdf(file = 'graphs/misc/clean_DE_heatmap_example.pdf', useDingbats = F, height = 2, width = 2)
+Heatmap(clean_mat, col = col_fun, cluster_rows = F, cluster_columns = F, show_row_dend = F, show_column_dend = F, use_raster = T)
+dev.off()
+
+Heatmap(clean_mat, col = col_fun, cluster_rows = F, cluster_columns = F, show_row_dend = F, show_column_dend = F, use_raster = T)
+
+```
+
+
+save the top 20 MetaMarkers with stats as a csv for supplemental table 3
+
+```{r}
+
+library(MetaMarkers)
+library(dplyr)
+```
+
+
+```{r}
+
+test_meta_markers = read_meta_markers("../data/metamarkers/fetal_meta_markers_v2.csv.gz")
+test_markers = test_meta_markers %>% filter(rank <= 20 & cell_type != 'other') %>% select(cell_type, rank, gene)
+
+write.csv(test_markers, file = '/home/werner/projects/meta_qc_organoid/data/metamarkers/markers_for_suppTable_v2.csv', row.names = F)
+
+
+read.csv('/home/werner/projects/meta_qc_organoid/data/metamarkers/markers_for_suppTable_v2.csv')
+
+```
+
+
+
+
+Explore expression of cell stress genes
+Bhaduri 2020 and Cheroni 2022 focused mainly on PGK1, ARCN1, and GORASP2
+Pollen 2019 provided stress modules from their WGCNA analysis, grabbed the genes for their ER stress and oxidative stress modules
+He 2023 (Organoid atlas) just scored (?) Canonical Glycolysis GO term genes
+
+Compare the organoid and primary tissue expression levels of these genes
+
+
+
+
+
+Get the genes in the Canonical Glycolysis GO terms
+
+```{r}
+load('../../../data/go_annotations/go_annotations.Rdata')
+length(go_terms)
+library(GO.db)
+library(Seurat)
+GO_descriptions = as.list(GOTERM)
+
+#GO terms with metadata
+go_terms = go_terms[go_terms %in% names(GO_descriptions)]
+length(go_terms)
+
+get_go_description = function(go_term){
+  return(Term(GO_descriptions[[go_term]]))
+}
+
+get_go_set_genes = function(go_term, go_table){
+  return(unique(go_table$gene_symbol[go_table$go_id==go_term]))
+}
+
+#Get all the GO term descriptions
+all_go_descriptions = sapply(1:length(go_terms), function(i) get_go_description(go_terms[i]))
+names(all_go_descriptions) = go_terms
+
+#Grab the genes for the canonical glycolysis GO term
+#'GO:0061621'
+all_go_descriptions[all_go_descriptions == 'canonical glycolysis']
+glycolysis_genes = get_go_set_genes('GO:0061621', go_table)
+
+
+#Load the Pollen 2019 stress gene modules
+pollen_stress_genes = read.table('../../../data/cell_stress/pollen_2019_stress_modules.csv', header = T, sep = ',')
+
+table(glycolysis_genes %in% pollen_stress_genes$gene)
+#Only has GORASP2
+table(c('PGK1','ARCN1','GORASP2') %in% pollen_stress_genes$gene)
+#Only has PGK1
+table(c('PGK1','ARCN1','GORASP2') %in% glycolysis_genes)
+
+```
+
+```{r}
+
+pollen_stress_genes$study = rep('Pollen 2019 et al.', length = nrow(pollen_stress_genes))
+
+glycolysis_df = data.frame(gene = glycolysis_genes, 
+                           module = rep('GO:0061621 - canonical glycolysis', length = length(glycolysis_genes)), 
+                           study = rep('GO ontology', length = length(glycolysis_genes)))
+
+stress_gene_df = rbind(pollen_stress_genes, glycolysis_df)
+stress_gene_df
+
+write.csv(stress_gene_df, "../data/cell_stress/stress_gene_df_v2.csv", row.names=FALSE)
+
+
+```
+
+
+
+
+organoid metadata
+
+```{r}
+all_sample_meta = read.csv('../../../data/seurat_objs/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta
+```
+
+Run through the datasets and grab the normalized expression of all these genes
+```{r}
+
+stress_genes = c(glycolysis_genes, pollen_stress_genes$gene, 'ARCN1' )
+table(duplicated(stress_genes))
+stress_gene_exp_mat = matrix(nrow = length(stress_genes), ncol = nrow(all_sample_meta), dimnames = list(stress_genes, all_sample_meta$sample_ids))
+
+
+for(i in 1:nrow(all_sample_meta)){
+  
+  x = load(all_sample_meta$processed_seurat_path[[i]])
+  dataset = get(x)
+  rm(seurat_object)
+  gc()
+  
+  gene_means = colMeans(FetchData(object = dataset, vars = stress_genes, layer = "data"))
+  index = match(stress_genes, names(gene_means))
+  stress_gene_exp_mat[ ,i] = gene_means[index]
+  rm(dataset)
+  gc()
+  print(i)
+
+}
+
+
+```
+
+
+```{r}
+
+stress_gene_exp_mat[1:10, 1:10]
+
+test_1 = reshape2::melt(stress_gene_exp_mat)
+test_1
+
+ggplot(test_1, aes(x = Var1, y = value)) + geom_violin(scale = 'width')
+```
+
+
+
+
+Run through the primary tissue datasets and grab the normalized expression of all these genes
+
+```{r}
+
+human_fetal_dataset_names = c( 
+                               'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
+                               'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
+                               'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
+                               'linnarsson_GW8_3','linnarsson_GW8-1','linnarsson_GW8-5_1','linnarsson_GW8-5_2','linnarsson_GW9-2',
+                               'linnarsson_GW9-5','linnarsson_GW10','linnarsson_GW11-5','linnarsson_GW12','linnarsson_GW13', 'linnarsson_GW14',
+                               'areal_GW14','poliodakis_geschwind_batch1', 'poliodakis_geschwind_batch2','areal_GW18_2','areal_GW19','areal_GW19_2',
+                               'areal_GW20','areal_GW20_31','areal_GW20_34','areal_GW25','fan_fu', 'areal_GW16','areal_GW18', 'areal_GW22','areal_GW22T',
+                               'shi_wang','zhou_lu', 'yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4','trevino_greenleaf_1','trevino_greenleaf_2',
+                               'trevino_greenleaf_3','trevino_greenleaf_4')
+
+human_fetal_dataset_paths = list(
+                                 '../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
+                                 '../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata', 
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
+                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
+                                 '../data/seurat_objs/individual/shi_wang_seurat_processed.Rdata', 
+                                 '../data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032680_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032681_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032682_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/yu_sun_GSM5032683_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata',
+                                 '../data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata')
+
+
+```
+
+
+
+```{r}
+
+fetal_stress_gene_exp_mat = matrix(nrow = length(stress_genes), ncol = length(human_fetal_dataset_names), dimnames = list(stress_genes, human_fetal_dataset_names))
+
+
+for(i in 1:length(human_fetal_dataset_paths)){
+  x = load(human_fetal_dataset_paths[[i]])
+  dataset = get(x)
+  #Remove to clear memory
+  suppressWarnings(rm(x, fan_fu_dataset, poliodakis_dataset_batch1,poliodakis_dataset_batch2, GW14_merged_dataset,GW16_merged_dataset, GW17_merged_dataset, 
+                      GW18_2_merged_dataset, GW18_merged_dataset, GW19_merged_dataset,GW19_2_merged_dataset, GW20_merged_dataset, GW20_31_merged_dataset, 
+                      GW20_34_merged_dataset, GW22_merged_dataset, GW22T_merged_dataset, GW25_merged_dataset, seurat_object,
+                      trevino_dataset_batch1,trevino_dataset_batch2,trevino_dataset_batch3,trevino_dataset_batch4, zhou_lu_dataset, shi_wang_dataset))
+  gc()
+  
+  gene_means = colMeans(FetchData(object = dataset, vars = stress_genes, layer = "data"))
+  index = match(stress_genes, names(gene_means))
+  fetal_stress_gene_exp_mat[ ,i] = gene_means[index]
+  rm(dataset)
+  gc()
+  print(i)
+
+}
+
+```
+
+
+
+
+```{r}
+
+
+test_2 = reshape2::melt(fetal_stress_gene_exp_mat)
+test_2
+
+ggplot(test_2, aes(x = Var1, y = value)) + geom_violin(scale = 'width')
+```
+
+
+```{r}
+
+stress_gene_exp_mat[50:70, 1:10]
+
+```
+
+
+```{r}
+
+fetal_stress_gene_exp_mat = reshape2::acast(test_2[ ,1:3], Var1 ~ Var2 )
+
+```
+
+
+
+```{r}
+organoid_stress_df = test_1
+fetal_stress_df = test_2
+
+
+save(organoid_stress_df, fetal_stress_df, comb_stress_exp_df, file = '../data/cell_stress/stress_gene_exp_v2.Rdata')
+
+```
+
+
+
+```{r}
+#Contain the organoid_stress_df, fetal_stress_df, comb_stress_exp_df dataframes
+load(file = '../../../data/cell_stress/stress_gene_exp_v2.Rdata')
+
+#Make the expression matrices
+fetal_stress_gene_exp_mat = reshape2::acast(fetal_stress_df[ ,1:3], Var1 ~ Var2 )
+org_stress_gene_exp_mat = reshape2::acast(organoid_stress_df[ ,1:3], Var1 ~ Var2 )
+
+```
+
+
+
+```{r}
+#exclude the genes missing in several datasets
+#There's one dataset who is missing a lot of genes, group of 4 datasets
+org_keep_genes = names(which(rowSums(is.na(org_stress_gene_exp_mat)) <= 4))
+fetal_keep_genes = names(which(rowSums(is.na(fetal_stress_gene_exp_mat)) <= 4))
+
+keep_genes = intersect(org_keep_genes, fetal_keep_genes)
+
+#Only consider the datasets with CPM
+org_dataset_index = all_sample_meta$Normalization.for.this.study == 'CPM'
+#Only zhou_lu dataset was not CPM
+fetal_dataset_index = colnames(fetal_stress_gene_exp_mat) != 'zhou_lu'
+
+org_stress_means = rowMeans(org_stress_gene_exp_mat[rownames(org_stress_gene_exp_mat) %in% keep_genes, org_dataset_index ], na.rm = T)
+fetal_stress_means = rowMeans(fetal_stress_gene_exp_mat[rownames(fetal_stress_gene_exp_mat) %in% keep_genes, fetal_dataset_index ], na.rm = T)
+table(names(org_stress_means) == names(fetal_stress_means))
+
+
+
+FC_stress = log2(org_stress_means/fetal_stress_means)
+FC_stress = FC_stress[order(FC_stress)]
+
+organoid_stress_df$data_type = rep('Organoid', length = nrow(organoid_stress_df))
+fetal_stress_df$data_type = rep('Primary tissue', length = nrow(fetal_stress_df))
+
+comb_stress_exp_df = rbind(organoid_stress_df, fetal_stress_df)
+comb_stress_exp_df = comb_stress_exp_df %>% filter(Var1 %in% keep_genes)
+comb_stress_exp_df$Var1 = factor(comb_stress_exp_df$Var1, levels = c(names(FC_stress)))
+
+
+#gene_order = comb_stress_exp_df %>% filter(Var2 == 'uzquiano_1') %>% pull(Var1)
+
+#Filter out the nonCPM datasets
+org_cpm = all_sample_meta$sample_ids[all_sample_meta$Normalization.for.this.study == 'CPM']
+fetal_cpm = colnames(fetal_stress_gene_exp_mat)
+fetal_cpm = fetal_cpm[fetal_cpm != 'zhou_lu']
+cpm_datasets = c(org_cpm, fetal_cpm)
+comb_stress_exp_df = comb_stress_exp_df %>% filter(Var2 %in% cpm_datasets)
+
+
+fc_gene_df = comb_stress_exp_df %>% group_by(Var1) %>% summarize(mean_exp = mean(value))
+index = match(names(FC_stress), fc_gene_df$Var1)
+fc_gene_df = fc_gene_df[index, ]
+fc_gene_df$log2FC = FC_stress
+
+up_prim_genes = as.character(fc_gene_df %>% filter(mean_exp >= 50 & log2FC <= -.25) %>% pull(Var1))
+up_org_genes = as.character(fc_gene_df %>% filter(mean_exp >= 50 & log2FC >= .25) %>% pull(Var1))
+
+
+hist(FC_stress, xlab = 'log2( Mean organoid expression / Mean Primary tissue expression )', 
+     main = 'log2(FC) of stress-related genes', breaks = seq(-1, 2.5, .1))
+abline(v = 0, col = 'red', lty = 'dashed', lwd = 2)
+
+#pdf(file = 'graphs/cell_stress/stress_gene_fc_histo_v2.pdf', useDingbats = F, height = 4, width = 4)
+hist(FC_stress, xlab = 'log2( Mean organoid expression / Mean Primary tissue expression )', 
+     main = 'log2(FC) of stress-related genes', breaks = seq(-1, 2.5, .1))
+abline(v = 0, col = 'red', lty = 'dashed', lwd = 2)
+#dev.off()
+
+
+temp = comb_stress_exp_df %>% group_by(Var1) %>% summarise(zscore_exp = scale(value), Var2 = Var2, data_type = data_type)
+
+ggplot(temp %>% filter(Var1 %in% up_prim_genes), aes(x = Var1, y = zscore_exp, fill = data_type)) + geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(guide = guide_axis(n.dodge=3)) + ggtitle('log2(FC) <= -0.25 : Increased expression in primary tissue') + ylab('z-score( CPM )')
+#ggsave(filename = 'up_FC_primary_stress_genes_v2.pdf', path = 'graphs/cell_stress/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+ggplot(temp %>% filter(Var1 %in% up_org_genes), aes(x = Var1, y = zscore_exp, fill = data_type)) + geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(guide = guide_axis(n.dodge=3)) + ggtitle('log2(FC) >= 0.25 : Increased expression in organoids') + ylab('z-score( CPM )')
+#ggsave(filename = 'up_FC_organoid_stress_genes_v2.pdf', path = 'graphs/cell_stress/', device = 'pdf', useDingbats = F, height = 4, width = 8)
+
+```
+
+```{r}
+
+glycolysis_genes
+
+```
+
+```{r}
+er_stress_genes = pollen_stress_genes %>% filter(module == 'organoid_human_ER_stress_module') %>% pull(gene)
+er_stress_genes
+```
+```{r}
+oxidative_stress_genes = pollen_stress_genes %>% filter(module == 'organoid_human_oxidative_stress_module') %>% pull(gene)
+oxidative_stress_genes
+```
+
+
+
+```{r}
+mean_glycolysis_org_exp = organoid_stress_df %>% filter(Var1 %in% glycolysis_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+table(all_sample_meta$sample_ids == mean_glycolysis_org_exp$Var2)
+
+dataset_index = all_sample_meta$Normalization.for.this.study == 'CPM'
+
+#Glycolysis expression
+par(pty = 's')
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Global preserved co-expression score')
+
+pdf('graphs/cell_stress/glyco_stress_presCoexp_scatter_v2.pdf', useDingbats = F, height = 4, width = 4)
+par(pty = 's')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Global preserved co-expression score')
+dev.off()
+
+
+#ER stress expression
+mean_er_org_exp = organoid_stress_df %>% filter(Var1 %in% er_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+table(all_sample_meta$sample_ids == mean_er_org_exp$Var2)
+
+par(pty = 's')
+corr_value = cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main =  sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER stress genes', ylab = 'Global preserved co-expression score')
+
+pdf('graphs/cell_stress/er_stress_presCoexp_scatter_v2.pdf', useDingbats = F, height = 4, width = 4)
+par(pty = 's')
+plot(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main =  sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER stress genes', ylab = 'Global preserved co-expression score')
+dev.off()
+
+#Oxidative stress expression
+mean_oxy_org_exp = organoid_stress_df %>% filter(Var1 %in% oxidative_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+table(all_sample_meta$sample_ids == mean_oxy_org_exp$Var2)
+
+par(pty = 's')
+corr_value = cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main =  sprintf('Oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Oxidative stress genes', ylab = 'Global preserved co-expression score')
+
+pdf('graphs/cell_stress/oxy_stress_presCoexp_scatter_v2.pdf', useDingbats = F, height = 4, width = 4)
+par(pty = 's')
+plot(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main =  sprintf('Oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Oxidative stress genes', ylab = 'Global preserved co-expression score')
+dev.off()
+```
+
+
+
+
+
+check the stress expression against the cell-type preserved co-expression
+
+```{r}
+
+mean_glycolysis_org_exp = organoid_stress_df %>% filter(Var1 %in% glycolysis_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+table(all_sample_meta$sample_ids == mean_glycolysis_org_exp$Var2)
+dataset_index = all_sample_meta$Normalization.for.this.study == 'CPM'
+
+par(pty = 's')
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Dividing prog. preserved co-expression')
+
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Neural prog. preserved co-expression')
+
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Intermediate prog. preserved co-expression')
+
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Glutamatergic preserved co-expression')
+
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'GABAergic preserved co-expression')
+
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Non-neuronal preserved co-expression')
+
+
+mean_ER_org_exp = organoid_stress_df %>% filter(Var1 %in% er_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+table(all_sample_meta$sample_ids == mean_ER_org_exp$Var2)
+
+par(pty = 's')
+corr_value = cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], main = sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER genes', ylab = 'Dividing prog. preserved co-expression')
+
+corr_value = cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], main = sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER genes', ylab = 'Neural prog. preserved co-expression')
+
+corr_value = cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], main = sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER genes', ylab = 'Intermediate prog. preserved co-expression')
+
+corr_value = cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], main = sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER genes', ylab = 'Glutamatergic preserved co-expression')
+
+corr_value = cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], main = sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER genes', ylab = 'GABAergic preserved co-expression')
+
+corr_value = cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], main = sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER genes', ylab = 'Non-neuronal preserved co-expression')
+
+
+mean_oxidative_org_exp = organoid_stress_df %>% filter(Var1 %in% oxidative_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+table(all_sample_meta$sample_ids == mean_oxidative_org_exp$Var2)
+dataset_index = all_sample_meta$Normalization.for.this.study == 'CPM'
+
+par(pty = 's')
+corr_value = cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], main = sprintf('oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of oxidative genes', ylab = 'Dividing prog. preserved co-expression')
+
+corr_value = cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], main = sprintf('oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of oxidative genes', ylab = 'Neural prog. preserved co-expression')
+
+corr_value = cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], main = sprintf('oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of oxidative genes', ylab = 'Intermediate prog. preserved co-expression')
+
+corr_value = cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], main = sprintf('oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of oxidative genes', ylab = 'Glutamatergic preserved co-expression')
+
+corr_value = cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], main = sprintf('oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of oxidative genes', ylab = 'GABAergic preserved co-expression')
+
+corr_value = cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], main = sprintf('oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of oxidative genes', ylab = 'Non-neuronal preserved co-expression')
+
+
+
+gly_cors = c(cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'))
+er_cors = c(cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_ER_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'))
+oxy_cors = c(cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxidative_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'))
+
+stress_corrs_df = data.frame(glycolysis_corrs = gly_cors, oxidative_stress_corrs = oxy_cors, ER_stress_corrs = er_cors)
+row.names(stress_corrs_df) = c('Dividing prog.','Neural prog.','Intermediate prog.','Glutamatergic','GABAergic','Non-neuronal')
+stress_corrs_df
+
+
+pdf(file = 'graphs/cell_stress/stress_exp_celltype_presCoexp_correlations_v2.pdf', useDingbats = F, height = 6, width = 6)
+col_fun = colorRamp2(c( -.4, 0, .4), c('blue',"white", "red"))
+Heatmap(stress_corrs_df, name = 'spearman', col = col_fun, cluster_rows = F, cluster_columns = F )
+dev.off()
+
+col_fun = colorRamp2(c( -.4, 0, .4), c('blue',"white", "red"))
+Heatmap(stress_corrs_df, name = 'spearman', col = col_fun, cluster_rows = F, cluster_columns = F )
+
+colMeans(stress_corrs_df)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+temp_df = data.frame(protocol = all_sample_meta$Protocol.classification, global_presCoexp = all_sample_meta$genome_cons_coexp_score, 
+                     rna_norm = all_sample_meta$Normalization.for.this.study,
+                     glycolysis_exp =mean_glycolysis_org_exp$mean_exp,
+                     er_stress_exp = mean_er_org_exp$mean_exp,
+                     oxidative_stress_exp = mean_oxy_org_exp$mean_exp)
+
+temp_df = temp_df %>% filter(rna_norm == 'CPM')
+
+##Add the fetal data too 
+mean_glycolysis_fetal_exp = test_2 %>% filter(Var1 %in% glycolysis_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+mean_er_fetal_exp = test_2 %>% filter(Var1 %in% er_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+mean_oxy_fetal_exp = test_2 %>% filter(Var1 %in% oxidative_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+
+temp_fetal_df = data.frame(protocol = mean_oxy_fetal_exp %>% pull(Var2), global_presCoexp = NA, rna_norm = NA, 
+                           glycolysis_exp =mean_glycolysis_fetal_exp$mean_exp,
+                           er_stress_exp = mean_er_fetal_exp$mean_exp,
+                           oxidative_stress_exp =mean_oxy_fetal_exp$mean_exp )
+temp_fetal_df = temp_fetal_df %>% filter(protocol != 'zhou_lu')
+temp_fetal_df$protocol = rep('Primary tissue', length = nrow(temp_fetal_df))
+
+
+
+temp_df = rbind(temp_df, temp_fetal_df)
+
+stress_colors = c('Primary tissue' = 'grey', 'directed hypothalamic arcuate' = 'red', 'iPSC-microglia' = 'red',
+                  'vascular organoid' = 'red','undirected' = 'red','directed cortical' = 'red',
+                  'directed cerebellum' = 'red','directed dorsal forebrain' = 'red','directed MGE' = 'red', 
+                  'undirected neuro-vascular' = 'red','directed ventral midbrain' = 'red','directed thalamic' = 'red','directed brainstem' = 'red')
+
+
+data_order = temp_df %>% group_by(protocol) %>% summarise(median_exp = median(glycolysis_exp)) %>% arrange(median_exp) %>% pull(protocol)
+temp_df$protocol = factor(temp_df$protocol, levels = c(data_order))
+ggplot(temp_df, aes(x = protocol, y = glycolysis_exp, fill = protocol)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = stress_colors) + guides(fill = 'none') + ylab('Mean expression of Glycolysis genes')
+ggsave(filename = 'mean_glycolysis_exp_v2.pdf', path = 'graphs/cell_stress/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+data_order = temp_df %>% group_by(protocol) %>% summarise(median_exp = median(er_stress_exp)) %>% arrange(median_exp) %>% pull(protocol)
+temp_df$protocol = factor(temp_df$protocol, levels = c(data_order))
+ggplot(temp_df, aes(x = protocol, y = er_stress_exp, fill = protocol)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = stress_colors) + guides(fill = 'none') + ylab('Mean expression of ER-stress genes')
+ggsave(filename = 'mean_er_stress_exp_v2.pdf', path = 'graphs/cell_stress/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+data_order = temp_df %>% group_by(protocol) %>% summarise(median_exp = median(oxidative_stress_exp)) %>% arrange(median_exp) %>% pull(protocol)
+temp_df$protocol = factor(temp_df$protocol, levels = c(data_order))
+ggplot(temp_df, aes(x = protocol, y = oxidative_stress_exp, fill = protocol)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = stress_colors) + guides(fill = 'none') + ylab('Mean expression of Oxidative stress genes')
+ggsave(filename = 'mean_oxidative_stress_exp_v2.pdf', path = 'graphs/cell_stress/', device = 'pdf', useDingbats = F, height = 4, width = 6)
+
+
+
+stress_exp_corrs = cor(temp_df[ ,c('glycolysis_exp','er_stress_exp','oxidative_stress_exp')], method = 'spearman')
+
+
+pdf(file = 'graphs/cell_stress/stress_exp_correlations_v2.pdf', useDingbats = F, height = 6, width = 6)
+
+col_fun = colorRamp2(c( 0, 1), c("white", "red"))
+Heatmap(stress_exp_corrs, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+dev.off()
+
+Heatmap(stress_exp_corrs, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+
+
+```
+
+
+
+
+
+
+
+
+
+

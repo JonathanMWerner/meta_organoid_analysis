@@ -1,0 +1,1059 @@
+
+
+Processing the massive fetal arealization dataset from the kreigstein lab
+each timepoint and area is saved in a different directory
+
+```{r}
+
+library(Seurat)
+library(dplyr)
+library(MetaMarkers)
+library(data.table)
+library(ggplot2)
+
+```
+
+Read in the metadata
+cells are labeled by their age_region_barcode
+This is metadata for only the filtered cells used in the analysis, so a subset of the cells present in each directory from the nemo archive
+
+This is from Supplemental table 1 of the publication
+```{r}
+
+meta_file = '/home/werner/projects/meta_qc_organoid/datasets/arealization_fetal_kriegstein/areal_dataset_metadata.csv'
+
+metadata = read.csv(meta_file, header = TRUE)
+metadata
+
+
+#Check for any mislabeled GW15 and GW16 cells
+table(sapply(strsplit(metadata$cell.name, '_'), '[[',1))
+
+```
+```{r}
+table(metadata$cell.type)
+table(metadata$individual)
+
+#Check for GW19_2 barcodes in the GW19 metadata
+
+table(sapply(strsplit(filter(metadata, individual == 'GW19')$cell.name, '_', ),'[[', 2 ))
+
+gw19_2_meta_index = which(sapply(strsplit(filter(metadata, individual == 'GW19')$cell.name, '_', ),'[[', 2 ) == 2)
+gw19_meta_index = which(sapply(strsplit(filter(metadata, individual == 'GW19')$cell.name, '_', ),'[[', 2 ) != 2)
+
+filter(metadata, individual == 'GW19')[gw19_2_meta_index, ]
+filter(metadata, individual == 'GW19')[gw19_meta_index, ]
+
+#GW19 metadata is for both GW19 and GW19_2, 54,237 cells in GW19_2
+
+GW19_metadata = filter(metadata, individual == 'GW19')[gw19_meta_index, ]
+GW19_2_metadata = filter(metadata, individual == 'GW19')[gw19_2_meta_index, ]
+GW19_2_metadata$individual = rep('GW19_2', length = nrow(GW19_2_metadata))
+
+
+#Some of the GW19 regions are mislabeled, GW10_hippocampus is labeled as V1
+table(sapply(strsplit(GW19_metadata$cell.name, '_' ), '[[', 2 ))
+
+hippo_index = which(sapply(strsplit(GW19_metadata$cell.name, '_' ), '[[', 2 ) == 'hippocampus')
+hypothal_index = which(sapply(strsplit(GW19_metadata$cell.name, '_' ), '[[', 2 ) == 'hypothalamus')
+thal_index = which(sapply(strsplit(GW19_metadata$cell.name, '_' ), '[[', 2 ) == 'thalamus')
+
+GW19_metadata$area[hippo_index] = 'hippocampus'
+GW19_metadata$area[hypothal_index] = 'hypothalamus'
+GW19_metadata$area[thal_index] = 'thalamus'
+
+#Check same for GW19_2
+table(sapply(strsplit(GW19_2_metadata$cell.name, '_' ), '[[', 3 ))
+table(GW19_2_metadata$area)
+
+#Rename the GW19_2 metadata and add it all back in
+metadata  = filter(metadata, individual != 'GW19')
+table(metadata$individual)
+
+metadata = rbind(metadata, GW19_metadata)
+metadata = rbind(metadata, GW19_2_metadata)
+
+table(metadata$individual)
+```
+
+individuals GW18, GW22, and GW22T did not have any matched metadata. Check for mislabeling and such
+They all agree
+
+```{r}
+
+GW20_34_metadata = filter(metadata, individual == 'GW20_34')
+table(GW20_34_metadata$area)
+
+table(sapply(strsplit(GW20_34_metadata$cell.name, '_'),'[[',1 ))
+
+
+table(sapply(strsplit(GW20_34_metadata$cell.name, '_'),'[[',2 ))
+
+table(sapply(strsplit(GW20_34_metadata$cell.name, '_'),'[[',2 ) == GW20_34_metadata$area)
+```
+
+
+
+
+And this metadata is from the ucsc browser
+Check for any differences between the two
+
+```{r}
+
+ucsc_meta_file = '/home/werner/projects/meta_qc_organoid/datasets/arealization_fetal_kriegstein/ucsc_areal_metadata.tsv'
+ucsc_metadata = read.table(ucsc_meta_file, sep = '\t', header = T)
+ucsc_metadata
+```
+
+change the cell_type column to match the spelling of the original metadata
+and change some of the area names
+
+```{r}
+table(ucsc_metadata$cell_type)
+
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'astrocyte'] = 'Astrocyte'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'dividing'] = 'Dividing'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'endothelial'] = 'Endo'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'intermediate progenitor cell'] = 'IPC'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'interneuron'] = 'Interneuron'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'microglia'] = 'Microglia'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'neuron'] = 'Neuron'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'oligodendrocyte'] = 'Oligo'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'outlier'] = 'Outlier'
+ucsc_metadata$cell_type[ucsc_metadata$cell_type == 'radial glia'] = 'RG'
+
+table(ucsc_metadata$cell_type)
+
+```
+```{r}
+
+table(ucsc_metadata$area)
+
+ucsc_metadata$area[ucsc_metadata$area == 'caudal'] = 'CGE'
+ucsc_metadata$area[ucsc_metadata$area == 'lateral'] = 'LGE'
+ucsc_metadata$area[ucsc_metadata$area == 'medial'] = 'MGE'
+ucsc_metadata$area[ucsc_metadata$area == 'nucleus accumbens'] = 'nucleusaccumbens'
+ucsc_metadata$area[ucsc_metadata$area == 'prefrontal cortex'] = 'PFC'
+
+table(ucsc_metadata$area)
+```
+
+all the cells in common between the two
+```{r}
+
+table(metadata$cell.name %in% ucsc_metadata$cell_name)
+
+```
+
+
+Checking barcodes, numi, ngenes, and the annotations match across the two for the different regions
+
+the barcodes, numi, and ngenes all match across the two metadata sets, but the cell type annotations differ somewhat. The number that differ are below
+The thalamus has a few thousand extra cells in the orginal metadata, thalamus cells from GW19 are missing from the UCSC metadata
+
+CGE:  3611 cell type annotations mismatch
+caudate: 1610 cell type annotations mismatch
+cerebellum: 73
+cingulate: 268
+claustrum: 996
+hippocampus: 582
+hypothalamus: 4318
+insula: 21
+LGE: 12264
+MGE: 5343
+midbrain: 106
+motor: 4851
+mucleusaccumbens: 53
+parietal: 7920
+PFC: 5468
+preoptic: 247
+putamen: 2916
+somatosensory: 5433
+striatum: 98
+temporal: 2129
+thalamus: 4469
+V1: 5358
+
+total mismatched celltype annotations: 68,134
+since the barcodes/numi/ngene all match between the two, still does not address the discrepency between the metadata and raw data onn the nnemo repository
+
+```{r}
+
+
+```
+
+```{r}
+
+a = 'LGE'
+
+print('Cell barcodes...')
+ori_meta = filter(metadata, area == a)$cell.name
+ucsc_meta = filter(ucsc_metadata, area == a)$cell_name
+length(ori_meta)
+length(ucsc_meta)
+index = match(ori_meta, ucsc_meta)
+table(ori_meta == ucsc_meta[index])
+
+print('Number of genes...')
+ori_meta = filter(metadata, area == a)$ngene
+ucsc_meta = filter(ucsc_metadata, area == a)$ngene
+table(ori_meta == ucsc_meta[index])
+
+print('Number of umi...')
+ori_meta = filter(metadata, area == a)$numi
+ucsc_meta = filter(ucsc_metadata, area == a)$numi
+table(ori_meta == ucsc_meta[index])
+
+print('Cell type annotations...')
+ori_meta = filter(metadata, area == a)$cell.type
+ucsc_meta = filter(ucsc_metadata, area == a)$cell_type
+ori_meta[1:10]
+ucsc_meta[1:10]
+table(ori_meta == ucsc_meta[index])
+
+```
+
+```{r}
+not_match = which(!ori_meta == ucsc_meta[index])
+length(not_match)
+ori_meta[not_match][1:10]
+ucsc_meta[index][not_match][1:10]
+
+
+table(ori_meta[not_match])
+table(ucsc_meta[index][not_match])
+
+
+temp_df = data.frame(publication_annotations = ori_meta[not_match], ucsc_annotations = ucsc_meta[index][not_match] )
+temp_df = temp_df %>% group_by(publication_annotations, ucsc_annotations) %>% summarize(value = length(ucsc_annotations) )
+
+ggplot(temp_df, aes(x = publication_annotations, y = value, fill = ucsc_annotations)) +
+  geom_bar(position='fill', stat="identity") + ylab("% change to UCSC annotations") + 
+  ggtitle(sprintf('%i cells in %s with different celltype annotations',length(not_match),a)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+
+ggplot(temp_df, aes(x = publication_annotations, y = value, fill = ucsc_annotations)) +
+  geom_bar(position='stack', stat="identity") + ylab("# change to UCSC annotations") + 
+  ggtitle(sprintf('%i cells in %s with different celltype annotations',length(not_match),a)) +
+  scale_x_discrete(guide = guide_axis(n.dodge = 2))
+
+temp_df
+```
+
+
+The ucsc metadata has a different number of cells for the thalamus region
+
+```{r}
+length(filter(metadata, area == 'thalamus')$cell.name)
+length(filter(ucsc_metadata, area == 'thalamus')$cell_name)
+table(filter(ucsc_metadata, area == 'thalamus')$cell_name %in% filter(metadata, area == 'thalamus')$cell.name)
+
+#Filter for the shared barcodes and then reorder to get the same order between the two
+temp_ori_thalamus = filter(metadata, area == 'thalamus')
+temp_ucsc_thalamus = filter(ucsc_metadata, area == 'thalamus')
+
+temp_ori_thalamus = temp_ori_thalamus[temp_ori_thalamus$cell.name %in% temp_ucsc_thalamus$cell_name,  ]
+index = match(temp_ucsc_thalamus$cell_name,temp_ori_thalamus$cell.name )
+temp_ori_thalamus = temp_ori_thalamus[index, ]
+
+table(temp_ori_thalamus$cell.name == temp_ucsc_thalamus$cell_name )
+
+
+table(temp_ori_thalamus$ngene == temp_ucsc_thalamus$ngene )
+table(temp_ori_thalamus$numi == temp_ucsc_thalamus$numi )
+table(temp_ori_thalamus$cell.type == temp_ucsc_thalamus$cell_type )
+```
+
+what are the missing cells
+
+```{r}
+not_present_index = which(!filter(metadata, area == 'thalamus')$cell.name %in% filter(ucsc_metadata, area == 'thalamus')$cell_name )
+table(filter(metadata, area == 'thalamus')$individual[not_present_index])
+table(filter(metadata, area == 'thalamus')$area[not_present_index])
+
+```
+
+
+
+
+
+
+There's also a second metadata file for the neocortex samples
+Not quite sure what the difference is between the two
+But there's no associated numi or feature counts for this metadata, so can't use it. Just cause the same barcodes are present doesnt mean it's the same cell, there are some mismatches
+
+```{r}
+
+
+meta_neocortex_file = '/home/werner/projects/meta_qc_organoid/datasets/arealization_fetal_kriegstein/areal_dataset_neocortex_metadata.csv'
+
+metadata_neo_cortex = read.csv(meta_neocortex_file, header = TRUE)
+metadata_neo_cortex
+```
+```{r}
+table(metadata_neo_cortex$Age)
+table(metadata_neo_cortex$Individual)
+table(metadata_neo_cortex$Area)
+```
+
+and the ucsc neocortex metatdata
+
+```{r}
+
+ucsc_neocortex_file = '/home/werner/projects/meta_qc_organoid/datasets/arealization_fetal_kriegstein/ucsc_neocortex_metadata.tsv'
+ucsc_metadata_neo_cortex = read.table(ucsc_neocortex_file, sep = '\t', header = T)
+ucsc_metadata_neo_cortex
+
+table(ucsc_metadata_neo_cortex$Individual)
+table(ucsc_metadata_neo_cortex$Area)
+```
+
+
+
+Going to go through each dataset that has metadata, filter for the cells that have metadata, add the cell type identity and other metadata, save that seurat object
+
+put them all in a single seurat object at the end of everything
+```{r}
+individuals = names(table(metadata$individual))
+individuals
+individuals[2]
+table(filter(metadata, individual == individuals[2])$area)
+
+
+```
+
+GW14
+somatosensory = somato
+V1 = occipital
+
+GW17
+somatosensory = somato
+
+GW18
+Nothing in GW18 matches
+
+GW18_2
+Has the correct metadata. Maybe the GW18 was a bust and the _2 is a second run?
+
+motor, parietal, somatosensory, and temporal, the metadata contains barcodes for the motor and motorVZ directories, temporal and TempVZ directories and so on
+represents the different lamina, filter the metadata with the lamina column, all or VZ
+
+somatosensory = somato
+thalamus = ventral_thalamus
+V1 metadata is just V1VZ data
+
+
+GW_19
+motor = M1_all and M1_CP, metadata for both those directories
+parietal = Parietal
+somatosensory = S1
+temporal = Temp_all
+PFC = PFC_all and PFC_CP
+V1 = V1_all and V1_CP
+thalamus is missing
+
+GW19_2
+motor = Motor
+parietal = Parietal
+somatosensory = SS
+temporal = Temporal
+thalamus = Thalamus
+
+
+GW20
+somatosensory = somata
+thalamus metadata has data for the ventral, dorsal, and caudal thalamus directories
+
+GW20_31
+hypothalamus = hypo
+
+GW20_34
+hypothalamus = hypo
+ PFC, thalamus, parietal metadata all have data for multiple raw data directories
+ 
+GW22
+
+only V1 matches, have no clue what the somato1, somato2 or PFC1, PFC2 , etc, datasets are, metadata does not match
+
+
+GW22T
+
+nothing matches
+
+GW25
+
+thalamus metadata is for the thalamus, anteriorthal, and pulminarthal raw data directories
+
+Parietal metadata is for parietal, ParDL, ParMZ, ParOSVZ, ParUL, ParVZ raw data directories
+PFC metadata is for PFC, PFCDL, PFCMZ, PFCUL, PFCVZ_SVZ raw data directories
+
+
+```{r}
+individual_index = 3
+current_individual = individuals[individual_index]
+
+regions = names(table(filter(metadata, individual == current_individual)$area))
+region_index = 11
+
+current_region = regions[region_index]
+
+
+current_individual
+current_region
+
+current_dataset = paste(current_individual, current_region, sep = '_')
+current_dataset
+```
+
+
+
+
+
+Need to unzip and untar each directory
+Plug in directory here
+
+```{r}
+#Renaming current_dataset for when the file names and metadata don't agree in spelling
+
+current_dataset = 'GW22_motor2'
+
+```
+
+
+
+```{r}
+#raw_data_file = sprintf('/data/jwerner/data/nemo/u01-devhu-kriegstein-scell-10xv2/counts/%s/GRCh38/GRCh38/', current_dataset)
+
+raw_data_file = sprintf('/data/jwerner/data/nemo/u01-devhu-kriegstein-scell-10xv2/counts/%s/%s/', current_dataset, current_dataset)
+#raw_data_file 
+
+#raw_data_file = sprintf('/data/jwerner/data/nemo/u01-devhu-kriegstein-scell-10xv2/counts/%s/filtered_feature_bc_matrix/filtered_feature_bc_matrix/', current_dataset)
+
+raw_data_file
+data_exp = Read10X(raw_data_file)
+data_exp = CreateSeuratObject(counts = data_exp)
+data_exp
+```
+```{r}
+data_exp[[]]
+
+```
+
+
+
+
+Grab the metadata for that dataset
+
+```{r}
+
+dataset_metadata = filter(metadata, individual == current_individual & area == current_region)
+
+#dataset_metadata = filter(metadata, individual =='GW18_2' & area == current_region)
+
+#If working with the ____VZ or ___CP datasets
+#dataset_metadata = filter(metadata, individual == current_individual & area == 'thalamus' & lamina == 'VZSVZ')
+#dataset_metadata = filter(metadata, individual == current_individual & area == 'V1' & lamina == 'CP')
+dataset_metadata
+
+table(dataset_metadata$lamina)
+```
+
+
+
+For thalamus metadata, add the sub region to the area column
+```{r}
+dataset_metadata$area = sapply(strsplit(dataset_metadata$cell.name, split = '_', fixed = T), '[[', 2)
+table(dataset_metadata$area )
+
+gw20_thal_metadata  = dataset_metadata
+
+
+```
+
+
+Just get the sub thalamic regions
+
+```{r}
+dataset_metadata = filter(gw20_thal_metadata, area == 'pulminarthal')
+
+```
+
+
+
+Check the metadata matches up to the barcodes present
+The datasets with the lamina info in their barcodes, the barcodes are inn the fourth field instead of the third
+
+```{r}
+#Get the barcodes for the cells that have metadata
+cell_labels = dataset_metadata$cell.name
+cell_labels[1:10]
+cell_barcodes = sapply(strsplit(cell_labels, split = '_', fixed = T), '[[', 3)
+
+
+#Get the barcodes from the cells present in the raw data
+data_barcodes = sapply(strsplit(rownames(data_exp[[]]), split = '-', fixed = T), '[[', 1)
+
+#Add barcodes to metadata
+data_exp$barcodes = data_barcodes
+
+table(data_exp$barcodes %in%  cell_barcodes )
+
+
+#Subset data to the ones that have metadata present
+data_exp_subset = subset(data_exp, subset = barcodes %in% cell_barcodes )
+data_exp_subset
+
+```
+
+
+
+Seems like the subset of barcodes that have metadata are at least in the same order as the cell data
+```{r}
+
+table(cell_barcodes == data_exp_subset$barcodes)
+table(dataset_metadata$ngene == data_exp_subset$nFeature_RNA)
+table(dataset_metadata$numi == data_exp_subset$nCount_RNA)
+```
+
+But if i need to reorder the metadata...
+match the barcodes
+And check if the nCounts and nFeatures are the same, if not, it's not the right metadata
+```{r}
+
+index = match(data_exp_subset$barcodes, cell_barcodes)
+table(data_exp_subset$barcodes == cell_barcodes[index])
+
+table(data_exp_subset$nCount_RNA == dataset_metadata$numi[index])
+table(data_exp_subset$nFeature_RNA == dataset_metadata$ngene[index])
+```
+Just need to subset the metadata to match
+
+```{r}
+#Reorder the metadata to match the raw data
+cell_barcodes = cell_barcodes[index]
+dataset_metadata = dataset_metadata[index, ]
+
+table(data_exp_subset$barcodes == cell_barcodes)
+
+table(data_exp_subset$nCount_RNA == dataset_metadata$numi)
+table(data_exp_subset$nFeature_RNA == dataset_metadata$ngene)
+
+```
+
+
+
+```{r}
+par(pty = 's')
+plot(data_exp_subset$nCount_RNA, dataset_metadata$numi[index], cex = .5, ylab = 'Metadata nCounts_RNA', xlab = 'Raw data nCounts_RNA')
+abline(a = 0, b = 1, col = 'red')
+
+par(pty = 's')
+plot(data_exp_subset$nFeature_RNA, dataset_metadata$ngene[index], cex = .5, ylab = 'Metadata nFeature_RNA', xlab = 'Raw data nFeature_RNA')
+abline(a = 0, b = 1, col = 'red')
+
+```
+grab the subset of cells that match the metadata
+
+```{r}
+#Reorder the metadata to match the raw data
+cell_barcodes = cell_barcodes[index]
+dataset_metadata = dataset_metadata[index, ]
+
+#Filter out the cells that don't match
+#Check theyre the same cells
+table(which(data_exp_subset$nCount_RNA != dataset_metadata$numi) == which(data_exp_subset$nFeature_RNA != dataset_metadata$ngene))
+
+#Get the bad barcodes
+bad_cells = cell_barcodes[which(data_exp_subset$nCount_RNA != dataset_metadata$numi)]
+bad_cells
+
+#Filter them out
+data_exp_subset = data_exp_subset[ , !data_exp_subset$barcodes %in% bad_cells]
+dataset_metadata = dataset_metadata[!cell_barcodes %in% bad_cells, ]
+cell_barcodes = cell_barcodes[!cell_barcodes %in% bad_cells]
+
+
+#Doule check everything agrees
+table(data_exp_subset$barcodes == cell_barcodes)
+table(data_exp_subset$nCount_RNA == dataset_metadata$numi)
+table(data_exp_subset$nFeature_RNA == dataset_metadata$ngene)
+
+```
+
+
+
+
+
+
+Add the metadata to the seurat object
+```{r}
+
+data_exp_subset$age = dataset_metadata$age
+data_exp_subset$individual = dataset_metadata$individual
+data_exp_subset$structure = dataset_metadata$structure
+data_exp_subset$area = dataset_metadata$area
+data_exp_subset$clusterv1 = dataset_metadata$clusterv1
+data_exp_subset$`clusterv2...final` = dataset_metadata$`clusterv2...final`
+data_exp_subset$clusterv2_id = dataset_metadata$clusterv2_id
+data_exp_subset$lamina = dataset_metadata$lamina
+data_exp_subset$cell.type = dataset_metadata$cell.type
+
+data_exp_subset[[]]
+
+
+#save the dataset seurat object
+
+save_file = sprintf('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/%s.Rdata',
+                    current_dataset)
+save_file
+save(data_exp_subset, file = save_file)
+
+```
+
+
+
+
+
+Now check out the datasets with no metadata, is it possible to use them?
+GW15, GW16, GW18, GW22, GW22T
+
+
+
+```{r}
+
+individual_index = 11
+current_individual = individuals[individual_index]
+
+regions = names(table(filter(metadata, individual == current_individual)$area))
+region_index = 8
+current_region = regions[region_index]
+#current_region = 'somato'
+
+current_dataset = paste(current_individual, current_region, sep = '_')
+current_dataset
+
+
+#GW22 and GW22T have 1 and 2 on their directory names
+current_dataset = paste0(current_dataset, '1')
+current_dataset
+
+
+raw_data_file = sprintf('/data/jwerner/data/nemo/u01-devhu-kriegstein-scell-10xv2/counts/%s/%s/', current_dataset, current_dataset)
+raw_data_file
+data_exp_subset = Read10X(raw_data_file)
+data_exp_subset = CreateSeuratObject(counts = data_exp_subset)
+
+hist(data_exp_subset$nCount_RNA, main = sprintf('Num_cells: %i',ncol(data_exp_subset)))
+hist(data_exp_subset$nFeature_RNA, main = sprintf('Num_cells: %i',ncol(data_exp_subset)))
+
+#add an area metadata column for the 18, 22, and 22T datasets. Cant add one for the GW15 and GW16 datasets
+data_exp_subset$area = rep(current_region, ncol(data_exp_subset))
+data_exp_subset[[]]
+
+#save the dataset seurat object
+save_file = sprintf('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/%s.Rdata',
+                    current_dataset)
+save_file
+save(data_exp_subset, file = save_file)
+
+```
+
+GW15 and GW16, no metadata available
+All of 15 is very ppoor quality, in the hundreds of Features per gene, don't use
+GW16 s decent
+
+```{r}
+
+
+GW15_dirs = c('GW15_hippocampus','GW15_hypothalamus','GW15_LGE','GW15_MGE','GW15_parietal','GW15_PFC_CP','GW15_PFC_VZ','GW15_somato','GW15_temporal','GW15_thalamus','GW15_wholePFC')
+GW15_areas = c('hippocampus','hypothalamus','LGE','MGE','parietal','PFC_CP','PFC_VZ','somato','temporal','thalamus','wholePFC')
+GW16_dirs = c('GW16_hypo','GW16_MGE','GW16_motor','GW16_MotorVZ','GW16_ParietalVZ','GW16_PFC','GW16_PFCVZ','GW16_Somato','GW16_SomatoVZ','GW16_Temporal','GW16_TemporalVZ','GW16_V1','GW16_V1VZ')
+GW16_areas = c('hypo','MGE','motor','MotorVZ','ParietalVZ','PFC','PFCVZ','Somato','SomatoVZ','Temporal','TemporalVZ','V1','V1VZ')
+
+i =13
+
+current_dataset = GW16_dirs[i]
+current_dataset
+
+raw_data_file = sprintf('/data/jwerner/data/nemo/u01-devhu-kriegstein-scell-10xv2/counts/%s/%s/', current_dataset, current_dataset)
+#Random weird file path for GW16_TemporalVZ
+#raw_data_file = '/data/jwerner/data/nemo/u01-devhu-kriegstein-scell-10xv2/counts/GW16_TemporalVZ/GW16_TemporalVZ.mex.tar.gz/GW16_TemporalVZ'
+
+raw_data_file
+data_exp_subset = Read10X(raw_data_file)
+data_exp_subset = CreateSeuratObject(counts = data_exp_subset)
+
+hist(data_exp_subset$nCount_RNA, main = sprintf('Num_cells: %i',ncol(data_exp_subset)))
+hist(data_exp_subset$nFeature_RNA, main = sprintf('Num_cells: %i',ncol(data_exp_subset)))
+
+#add an area metadata column for the 18, 22, and 22T datasets. Cant add one for the GW15 and GW16 datasets
+data_exp_subset$area = rep(GW16_areas[i], ncol(data_exp_subset))
+data_exp_subset[[]]
+
+#save the dataset seurat object
+save_file = sprintf('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/%s.Rdata',
+                    current_dataset)
+save_file
+save(data_exp_subset, file = save_file)
+
+```
+
+
+Combine all the seurat objects now that they have metadata
+
+```{r}
+all_dataset_path = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/'
+all_datasets = paste(all_dataset_path, list.files(all_dataset_path), sep = '')
+
+#Get dataset identifiers
+dataset_ids = sapply(strsplit(list.files(all_dataset_path), split = '.', fixed = T), '[[', 1)
+dataset_ids
+```
+
+Merge all the datasets per time point, saving as separate datasets per person really
+
+```{r}
+
+timepoint_index = which(grepl('GW18', dataset_ids) & !grepl('GW18_2', dataset_ids))
+dataset_ids[timepoint_index]
+
+```
+
+```{r}
+#Load up all the timepoint datasets
+
+for(i in timepoint_index){
+  
+  load(all_datasets[i])
+  assign(dataset_ids[i], data_exp_subset)
+}
+
+
+#Just mmake the vector of all the dataset names
+dataset_ids[timepoint_index]
+
+```
+
+
+```{r}
+GW14_merged_dataset = merge(GW14_CGE, y = c(GW14_hypothalamus, GW14_LGE,GW14_MGE,GW14_motor,GW14_occipital,GW14_somato,GW14_striatum,GW14_thalamus),
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW14' )
+
+GW17_merged_dataset = merge(GW17_motor, y = c(GW17_parietal, GW17_PFC, GW17_somato, GW17_V1), add.cell.ids = dataset_ids[timepoint_index], project = 'GW17')
+
+GW16_merged_dataset = merge(GW16_hypo, y = c(GW16_MGE,GW16_motor,GW16_MotorVZ,GW16_ParietalVZ,GW16_PFC,GW16_PFCVZ,GW16_Somato,GW16_SomatoVZ,GW16_Temporal, GW16_TemporalVZ,GW16_V1,GW16_V1VZ), 
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW16')
+
+GW18_merged_dataset = merge(GW18_CGE, y = c(GW18_hippocampus, GW18_hypothalamus, GW18_LGE, GW18_MGE, GW18_motor, GW18_parietal, GW18_PFC, GW18_thalamus, GW18_V1), 
+                              add.cell.ids = dataset_ids[timepoint_index], project = 'GW18')
+
+GW18_2_merged_dataset = merge(GW18_2_CGE, y = c(GW18_2_claustrum, GW18_2_hippocampus, GW18_2_hypothalamus, GW18_2_LGE, GW18_2_MGE, GW18_2_motor, GW18_2_motorVZ, GW18_2_parietal,
+                                                GW18_2_ParVZ, GW18_2_somato, GW18_2_somatoVZ, GW18_2_temporal, GW18_2_TempVZ, GW18_2_V1VZ, GW18_2_ventral_thalamus), 
+                              add.cell.ids = dataset_ids[timepoint_index], project = 'GW18_2')
+
+GW19_merged_dataset = merge(GW19_thalamus, y = c(GW19_CGE, GW19_LGE, GW19_hippocampus, GW19_hypothalamus,GW19_M1_all, GW19_M1_CP, GW19_MGE, GW19_Parietal, GW19_PFC_all, GW19_PFC_CP, 
+                                                 GW19_S1, GW19_Temp_all, GW19_V1_all, GW19_V1_CP), 
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW19')
+
+GW19_2_merged_dataset = merge(GW19_2_Thalamus, y = c(GW19_2_CGE, GW19_2_Motor,  GW19_2_Parietal, GW19_2_PFC, GW19_2_SS, GW19_2_Temporal,  GW19_2_V1), 
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW19_2')
+
+GW20_merged_dataset = merge(GW20_caudalthalamus, y = c( GW20_claustrum, GW20_dorsalthalamus, GW20_hypothalamus, GW20_motor, GW20_preoptic, GW20_putamen, GW20_somato,
+                                                        GW20_ventral_thalamus, GW20CGE, GW20LGE, GW20MGE, GW20PFC, GW20V1), 
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW20')
+
+GW20_31_merged_dataset = merge(GW20_31_cerebellum, y = c(GW20_31_CGE, GW20_31_hypo, GW20_31_LGE, GW20_31_MGE, GW20_31_parietal, GW20_31_PFC, GW20_31_temporal, GW20_31_V1), 
+                               add.cell.ids = dataset_ids[timepoint_index], project = 'GW20_31')
+
+GW20_34_merged_dataset = merge(GW20_34_caudate, y = c(GW20_34_CGE, GW20_34_dorsalthalamus, GW20_34_hypo, GW20_34_LGE, GW20_34_MGE, GW20_34_motor, GW20_34_nucleusaccumbens, 
+                                                      GW20_34_parietal, GW20_34_ParVZ, GW20_34_PFC, GW20_34_PFCVZ, GW20_34_putamen, GW20_34_V1, GW20_34_ventralthalamus), 
+                               add.cell.ids = dataset_ids[timepoint_index], project = 'GW20_34')
+
+#Just the one dataset for GW22
+GW22_merged_dataset = merge(GW22_V1, y = c(GW22_motor1, GW22_motor2, GW22_parietal1, GW22_parietal2, GW22_PFC1, GW22_PFC2, GW22_somato1, GW22_somato2),
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW22')
+
+
+GW22T_merged_dataset = merge(GW22T_CGE, y = c(GW22T_hypo1, GW22T_hypo2, GW22T_LGE1, GW22T_LGE2, GW22T_motor1, GW22T_motor2, GW22T_parietal1, GW22T_parietal2, GW22T_PFC1, GW22T_PFC2, 
+                                              GW22T_somato1, GW22T_somato2, GW22T_thalamus1, GW22T_thalamus2),
+                             add.cell.ids = dataset_ids[timepoint_index], project = 'GW22T')
+
+GW25_merged_dataset = merge(GW25_3V_hypo, y = c(GW25_anteriorthal, GW25_caudate, GW25_CGE, GW25_cingulate, GW25_insula, GW25_midbrain, GW25_motor, GW25_ParDL, GW25_parietal, 
+                                                GW25_ParMZ, GW25_ParOSVZ, GW25_ParUL, GW25_ParVZ, GW25_PFC, GW25_PFCDL, GW25_PFCMZ, GW25_PFCUL, GW25_PFCVZ_SVZ, GW25_pulminarthal, 
+                                                GW25_somato, GW25_temporal, GW25_thalamus), 
+                            add.cell.ids = dataset_ids[timepoint_index], project = 'GW25')
+
+```
+
+```{r}
+
+rm(GW25_anteriorthal, GW25_caudate, GW25_CGE, GW25_cingulate, GW25_insula, GW25_midbrain, GW25_motor, GW25_ParDL, GW25_parietal, 
+                                                GW25_ParMZ, GW25_ParOSVZ, GW25_ParUL, GW25_ParVZ, GW25_PFC, GW25_PFCDL, GW25_PFCMZ, GW25_PFCUL, GW25_PFCVZ_SVZ, GW25_pulminarthal, 
+                                                GW25_somato, GW25_temporal, GW25_thalamus)
+
+```
+
+
+```{r}
+GW14_merged_dataset[[]]
+GW16_merged_dataset[[]]
+GW17_merged_dataset[[]]
+GW18_merged_dataset[[]]
+GW18_2_merged_dataset[[]]
+GW19_merged_dataset[[]]
+GW19_2_merged_dataset[[]]
+GW20_merged_dataset[[]]
+GW20_31_merged_dataset[[]]
+GW20_34_merged_dataset[[]]
+GW22_merged_dataset[[]]
+GW22T_merged_dataset[[]]
+GW25_merged_dataset[[]]
+
+```
+
+
+
+
+
+```{r}
+
+hist(GW18_merged_dataset$nCount_RNA)
+hist(GW18_merged_dataset$nFeature_RNA)
+
+GW18_merged_dataset@assays$RNA@counts[1:10, 1:10]
+```
+
+
+```{r}
+save(GW14_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata')
+save(GW16_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata')
+save(GW17_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW17.Rdata')
+save(GW18_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata')
+save(GW18_2_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata')
+save(GW19_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata')
+save(GW19_2_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata')
+save(GW20_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata')
+save(GW20_31_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata')
+save(GW20_34_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata')
+save(GW22_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata')
+save(GW22T_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata')
+save(GW25_merged_dataset, file = '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata')
+```
+
+
+
+
+
+
+################################################################
+Load up the datasets
+
+cpm normalizations and dim reductions from Seurat
+
+################################################################
+
+
+```{r}
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW17.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata')
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata')
+```
+
+
+```{r}
+
+dataset_paths = c('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW17.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
+                  '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata')
+
+```
+
+
+
+```{r}
+rm(GW14_merged_dataset, GW17_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset, GW20_merged_dataset, poliodakis_dataset, fan_fu_dataset, GW20_31_merged_dataset, 
+   GW20_34_merged_dataset, GW22_merged_dataset, GW25_merged_dataset)
+
+```
+
+
+```{r}
+dataset_names = c('GW14_merged_dataset','GW16_merged_dataset','GW17_merged_dataset','GW18_merged_dataset','GW18_2_merged_dataset','GW19_merged_dataset','GW19_2_merged_dataset','GW20_merged_dataset','GW20_31_merged_dataset',
+                  'GW20_34_merged_dataset','GW22_merged_dataset','GW22T_merged_dataset', 'GW25_merged_dataset')
+dataset_filenames = c('GW14', 'GW16','GW17', 'GW18', 'GW18_2','GW19','GW19_2','GW20','GW20_31','GW20_34','GW22','GW22T','GW25')
+
+```
+
+```{r}
+
+for(i in 3:length(dataset_paths)){
+
+  
+  i = 12
+  x = load(dataset_paths[i])
+  dataset = get(x)
+  
+  
+  dataset[["percent.mt"]] <- PercentageFeatureSet(dataset, pattern = "^MT-")
+  dataset = subset(dataset, subset = percent.mt < 50 & nFeature_RNA >=200 & nFeature_RNA <=6000)
+  dataset = NormalizeData(dataset, verbose = F, normalization.method = 'RC', scale.factor = 1e6)
+  dataset = FindVariableFeatures(dataset, selection.method = "vst", nfeatures = 2000, verbose = F)
+  all.genes <- rownames(dataset)
+  dataset = ScaleData(dataset , features = all.genes, verbose = F)
+  dataset = RunPCA(dataset, features = VariableFeatures(object = dataset), verbose = F)
+  dataset = RunUMAP(dataset, dims = 1:20, verbose = F)
+  
+  
+  print(DimPlot(dataset,reduction = 'umap', group.by = 'area'))
+  print(DimPlot(dataset,reduction = 'umap', group.by = 'cell.type'))
+  
+  
+  file_path = sprintf('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/%s.Rdata', dataset_filenames[i])
+  dataset_name = dataset_names[i]
+  assign(dataset_name, dataset)
+  save(list = c(dataset_name), file = file_path)
+  
+  rm(x,dataset,GW14_merged_dataset, GW16_merged_dataset, GW17_merged_dataset, GW18_merged_dataset, GW18_2_merged_dataset, GW19_merged_dataset, GW19_2_merged_dataset, GW20_merged_dataset, 
+     GW20_31_merged_dataset, GW20_34_merged_dataset, 
+     GW22_merged_dataset, GW22T_merged_dataset, GW25_merged_dataset)
+  gc()
+
+}
+
+```
+
+```{r}
+
+load('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata')
+
+
+GW22T_merged_dataset
+```
+
+```{r}
+
+DimPlot(GW22T_merged_dataset, reduction = 'umap', group.by = 'area')
+
+```
+
+
+Check what the adult and fetal metamarkers look like here
+
+Human BICCN metamarkers
+Stephan got the top 1000 markers at each level of classification
+
+```{r}
+human_class_path = '/data/fischer/biccn_markers/human/class_markers_top1000.csv.gz'
+human_subclass_path = '/data/fischer/biccn_markers/human/subclass_markers_top1000.csv.gz'
+human_type_path = '/data/fischer/biccn_markers/human/type_markers_top1000.csv.gz'
+
+human_class_markers = fread(human_class_path)
+
+human_subclass_markers = fread(human_subclass_path)
+
+human_type_markers = fread(human_type_path)
+```
+
+
+Get the metamarkers
+```{r}
+markers = list(
+    poliodakis = read_markers("/home/werner/projects/meta_qc_organoid/code/poliodakis_fetal_class_markers.csv.gz"),
+    fan_fu = read_markers("/home/werner/projects/meta_qc_organoid/code/fan_fu_fetal_class_markers.csv.gz")
+)
+
+
+```
+
+
+```{r}
+
+fetal_meta_markers = make_meta_markers(markers, detailed_stats = TRUE)
+
+```
+
+```{r}
+
+top_adult_mMarkers = filter(human_class_markers, rank <= 30 )
+#Run MetaMarker functions
+class_test = score_cells(GW25_merged_dataset@assays$RNA@data, top_adult_mMarkers)
+class_enrichment_test = compute_marker_enrichment(class_test)
+class_pred_test = assign_cells(class_test)
+
+GW25_merged_dataset[['GABAergic_enrichments']] = class_enrichment_test['all|GABAergic' , ]
+GW25_merged_dataset[['Glutamatergic_enrichments']] = class_enrichment_test['all|Glutamatergic' , ]
+GW25_merged_dataset[['Non_neuronal_enrichments']] = class_enrichment_test['all|Non-neuronal' , ]
+GW25_merged_dataset[['predicted_class']] = class_pred_test$predicted
+
+
+GW25_merged_dataset[['GABAergic_scores']] = class_test['all|GABAergic' , ]
+GW25_merged_dataset[['Glutamatergic_scores']] = class_test['all|Glutamatergic' , ]
+GW25_merged_dataset[['Non_neuronal_scores']] = class_test['all|Non-neuronal' , ]
+
+
+DimPlot(GW25_merged_dataset,reduction = 'umap', group.by = 'area')
+DimPlot(GW25_merged_dataset,reduction = 'umap', group.by = 'cell.type')
+FeaturePlot(GW25_merged_dataset, features = c('GABAergic_enrichments'))
+FeaturePlot(GW25_merged_dataset, features = c('Glutamatergic_enrichments'))
+FeaturePlot(GW25_merged_dataset, features = c('Non_neuronal_enrichments'))
+```
+
+
+```{r}
+
+top_fetal_mMarkers = filter(fetal_meta_markers, rank <= 30 )
+#Run MetaMarker functions
+class_test = score_cells(GW25_merged_dataset@assays$RNA@data, top_fetal_mMarkers)
+class_enrichment_test = compute_marker_enrichment(class_test)
+class_pred_test = assign_cells(class_test)
+
+GW25_merged_dataset[['GABAergic_enrichments']] = class_enrichment_test['all|GABAergic' , ]
+GW25_merged_dataset[['Glutamatergic_enrichments']] = class_enrichment_test['all|Glutamatergic' , ]
+GW25_merged_dataset[['Neural_prog_enrichments']] = class_enrichment_test['all|Neural_Progenitor' , ]
+GW25_merged_dataset[['Non_neuronal_enrichments']] = class_enrichment_test['all|Non-neuronal' , ]
+GW25_merged_dataset[['predicted_class']] = class_pred_test$predicted
+
+GW25_merged_dataset$MM_predicted_class =  class_pred_test$predicted
+
+GW25_merged_dataset[['GABAergic_scores']] = class_test['all|GABAergic' , ]
+GW25_merged_dataset[['Glutamatergic_scores']] = class_test['all|Glutamatergic' , ]
+GW25_merged_dataset[['Neural_prog_enrichments']] = class_test['all|Neural_Progenitor' , ]
+GW25_merged_dataset[['Non_neuronal_scores']] = class_test['all|Non-neuronal' , ]
+
+
+DimPlot(GW25_merged_dataset,reduction = 'umap', group.by = 'area')
+DimPlot(GW25_merged_dataset,reduction = 'umap', group.by = 'cell.type')
+DimPlot(GW25_merged_dataset, reduction = 'umap', group.by = 'MM_predicted_class')
+FeaturePlot(GW25_merged_dataset, features = c('GABAergic_enrichments'))
+FeaturePlot(GW25_merged_dataset, features = c('Glutamatergic_enrichments'))
+FeaturePlot(GW25_merged_dataset, features = c('Neural_prog_enrichments'))
+FeaturePlot(GW25_merged_dataset, features = c('Non_neuronal_enrichments'))
+```
+
+
+
+
+
+
+
+
