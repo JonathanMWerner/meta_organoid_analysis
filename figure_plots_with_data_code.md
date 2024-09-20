@@ -12,11 +12,16 @@ All data for these plots is provided at
 
 ``` r
 library(ggplot2)
+library(gridExtra)
 library(dplyr)
 ```
 
     ## 
     ## Attaching package: 'dplyr'
+
+    ## The following object is masked from 'package:gridExtra':
+    ## 
+    ##     combine
 
     ## The following objects are masked from 'package:stats':
     ## 
@@ -1458,3 +1463,417 @@ ggplot(all_gene_pc_df_plotting, aes(x = weight_threshold, y = mean_frac, group =
 ```
 
 ![](figure_plots_with_data_code_files/figure-gfm/organoid_PCA_marker_nonMarker_comparisons-2.png)<!-- -->
+
+## Supp. Figure 4 A and B
+
+``` r
+#Contains the all_comp_df,all_labeled_cellnum_df,full_cellnum_mat data
+load( file = '/home/werner/projects/meta_qc_organoid/data/organoid_composition/org_atlas_predicted_cell_type_data.Rdata')
+
+
+ggplot(filter(all_comp_df, true_label == 'Dividing_Progenitor'),aes(x = true_label_percent, y = predicted_percent)) + geom_point() +
+  xlim(0, .90) + ylim(0, .90) + xlab('Dividing_Progenitor %: Author annotations') + ylab('Dividing_Progenitor %: MetaMarker annotations') +
+  ggtitle('Dividing Progenitors') + geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-1.png)<!-- -->
+
+``` r
+ggplot(filter(all_comp_df, true_label == 'Neural_Progenitor'),aes(x = true_label_percent, y = predicted_percent)) + geom_point() +
+  xlim(0, .90) + ylim(0, .90) + xlab('Neural_Progenitor %: Author annotations') + ylab('Neural_Progenitor %: MetaMarker annotations') +
+  ggtitle('Neural Progenitors') + geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-2.png)<!-- -->
+
+``` r
+ggplot(filter(all_comp_df, true_label == 'Intermediate_Progenitor'),aes(x = true_label_percent, y = predicted_percent)) + geom_point() +
+  xlim(0, .90) + ylim(0, .90) + xlab('Intermediate_Progenitor %: Author annotations') + ylab('Intermediate_Progenitor %: MetaMarker annotations') +
+  ggtitle('Intermediate Progenitors') + geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-3.png)<!-- -->
+
+``` r
+ggplot(filter(all_comp_df, true_label == 'Glutamatergic'),aes(x = true_label_percent, y = predicted_percent)) + geom_point() +
+  xlim(0, .90) + ylim(0, .90) + xlab('Glutamatergic %: Author annotations') + ylab('Glutamatergic %: MetaMarker annotations') +
+  ggtitle('Glutamatergic') + geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-4.png)<!-- -->
+
+``` r
+ggplot(filter(all_comp_df, true_label == 'GABAergic'),aes(x = true_label_percent, y = predicted_percent)) + geom_point() +
+  xlim(0, .90) + ylim(0, .90) + xlab('GABAergic %: Author annotations') + ylab('GABAergic %: MetaMarker annotations') +
+  ggtitle('GABAergic') + geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-5.png)<!-- -->
+
+``` r
+ggplot(filter(all_comp_df, true_label == 'Non-neuronal'),aes(x = true_label_percent, y = predicted_percent)) + geom_point() +
+  xlim(0, .90) + ylim(0, .90) + xlab('Non-neuronal %: Author annotations') + ylab('Non-neuronal %: MetaMarker annotations') +
+  ggtitle('Non-neuronal') + geom_abline(slope = 1, intercept = 0, linetype = 'dashed', color = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-6.png)<!-- -->
+
+``` r
+all_sums_df = data.frame(true_label = all_labeled_cellnum_df$true_label, cell_sums = rowSums(all_labeled_cellnum_df[ ,2:ncol(all_labeled_cellnum_df)]) )
+
+percent_cellnum_mat = full_cellnum_mat
+r_index = full_cellnum_mat$true_label == 'Dividing_Progenitor'
+percent_cellnum_mat[r_index,2:8 ] = full_cellnum_mat[r_index,2:8 ] / all_sums_df$cell_sums[all_sums_df$true_label == 'Dividing_Progenitor']
+r_index = full_cellnum_mat$true_label == 'Neural_Progenitor'
+percent_cellnum_mat[r_index,2:8 ] = full_cellnum_mat[r_index,2:8 ] / all_sums_df$cell_sums[all_sums_df$true_label == 'Neural_Progenitor']
+r_index = full_cellnum_mat$true_label == 'Intermediate_Progenitor'
+percent_cellnum_mat[r_index,2:8 ] = full_cellnum_mat[r_index,2:8 ] / all_sums_df$cell_sums[all_sums_df$true_label == 'Intermediate_Progenitor']
+r_index = full_cellnum_mat$true_label == 'Glutamatergic'
+percent_cellnum_mat[r_index,2:8 ] = full_cellnum_mat[r_index,2:8 ] / all_sums_df$cell_sums[all_sums_df$true_label == 'Glutamatergic']
+r_index = full_cellnum_mat$true_label == 'GABAergic'
+percent_cellnum_mat[r_index,2:8 ] = full_cellnum_mat[r_index,2:8 ] / all_sums_df$cell_sums[all_sums_df$true_label == 'GABAergic']
+r_index = full_cellnum_mat$true_label == 'Non-neuronal'
+percent_cellnum_mat[r_index,2:8 ] = full_cellnum_mat[r_index,2:8 ] / all_sums_df$cell_sums[all_sums_df$true_label == 'Non-neuronal']
+
+percent_cellnum_mat = percent_cellnum_mat[1:6, ]
+r_names = percent_cellnum_mat$true_label
+percent_cellnum_mat  = as.matrix(percent_cellnum_mat[ ,2:8])
+rownames(percent_cellnum_mat ) = r_names
+percent_cellnum_mat = percent_cellnum_mat[ ,c('Dividing_Progenitor','Neural_Progenitor','Intermediate_Progenitor','Glutamatergic','GABAergic','Non-neuronal','unassigned')]
+
+
+col_fun = colorRamp2(c(0, .425, .85), c("blue", "white", "red"))
+Heatmap(percent_cellnum_mat, show_row_dend = F, show_column_dend = F, cluster_rows = F, cluster_columns = F, col = col_fun, name = 'predicted percentage')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/predicting_org_atlas_cell_types-7.png)<!-- -->
+
+## Supp. Figure 4 C
+
+``` r
+#Contains the all_pred_comp_df dataframe
+load( file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/predicted_celltype_comp_df.Rdata')
+
+unassigned_df = all_pred_comp_df %>% filter(predicted == 'unassigned') %>% arrange(desc(predicted_percent))
+
+index = match(unassigned_df$dataset, all_sample_meta$sample_ids)
+unassigned_df$normalization = all_sample_meta$Normalization.for.this.study[index]
+unassigned_df$normalization = factor(unassigned_df$normalization , levels = c('CPM','log(CPM+1)','Default Seurat log normalization  ',
+                                                                              'Seurat SCTransform','Default Seurat log normalization and UMI regression'))
+
+ggplot(unassigned_df, aes(x = normalization, y = predicted_percent)) + geom_boxplot() +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) + ylab('Unassigned percentage')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_predicted_cell_prop_heatmap-1.png)<!-- -->
+
+``` r
+comp_for_clustering = all_pred_comp_df %>% tidyr::pivot_wider(names_from = predicted, values_from = predicted_percent) %>% select(-c('other'))
+r_names = comp_for_clustering$dataset
+comp_for_clustering = as.matrix(comp_for_clustering[ ,2:8])
+rownames(comp_for_clustering) = r_names
+
+comp_for_clustering[is.na(comp_for_clustering)] = 0
+
+#Get palette for the grouped described protocols
+sample_region_grouped_palette = met.brewer('Renoir', n = 14)
+names(sample_region_grouped_palette) = names(table(all_sample_meta$Protocol.classification.region))
+
+dataset_annot = HeatmapAnnotation(organoid = all_sample_meta$Protocol.classification.region, 
+                                  col = list(organoid = sample_region_grouped_palette))
+
+h1 = Heatmap(t(comp_for_clustering),clustering_distance_rows = "euclidean",clustering_distance_columns = "euclidean",
+        show_column_names = F, show_row_dend = F, name = 'Cell-type composition',
+         clustering_method_columns = "ward.D2" , top_annotation = dataset_annot)
+h1 = draw(h1)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_predicted_cell_prop_heatmap-2.png)<!-- -->
+
+## Supp. Figure 4D and Supp. Figure 5 C
+
+``` r
+#Filtering out the normalizations that pretty much failed with MetaMarker annotations
+keep_samples = all_sample_meta$sample_ids[!all_sample_meta$Normalization.for.this.study %in% c('Seurat SCTransform','Default Seurat log normalization and UMI regression')]
+comp_for_clustering = comp_for_clustering[rownames(comp_for_clustering) %in% keep_samples, ]
+
+meta_index = match(rownames(comp_for_clustering), all_sample_meta$sample_ids)
+
+comp_scores = comp_for_clustering[ ,'Glutamatergic']
+#range(comp_scores)
+decile_label = rep('NA', length = nrow(comp_for_clustering))
+decile_label[comp_scores <= .10] = '[0-10%]'
+decile_label[comp_scores > .10 & comp_scores <= .20] = '(10-20%]'
+decile_label[comp_scores > .20 & comp_scores <= .30] = '(20-30%]'
+decile_label[comp_scores > .30 & comp_scores <= .40] = '(30-40%]'
+decile_label[comp_scores > .40 & comp_scores <= .50] = '(40-50%]'
+decile_label[comp_scores > .50 & comp_scores <= .60] = '(50-60%]'
+decile_label[comp_scores > .60 & comp_scores <= .70] = '(60-70%]'
+decile_label[comp_scores > .70 & comp_scores <= .80] = '(70-80%]'
+decile_label[comp_scores > .80 & comp_scores <= .90] = '(80-90%]'
+#Grab the preserved co-expression scores of that cell-type and add the celltype percentage of the datasets
+temp_comp_df = data.frame(sample_id = all_sample_meta$sample_ids[meta_index], pres_score = all_sample_meta$glut_cons_coexp_metric[meta_index], 
+                          egad_score = all_sample_meta$egad_auc_glut_markers[meta_index],
+                          decile_label = decile_label, comp_scores = comp_scores)
+temp_comp_df$decile_label = factor(temp_comp_df$decile_label, levels = c('[0-10%]','(10-20%]','(20-30%]','(30-40%]','(40-50%]','(50-60%]','(60-70%]','(70-80%]','(80-90%]'))
+
+g1 = ggplot(temp_comp_df, aes(x = decile_label, y = pres_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Glutamatergic Preserved co-expression score') +
+  xlab('Glutamatergic percentage') 
+g2 = ggplot(temp_comp_df, aes(x = decile_label, y = comp_scores)) + geom_boxplot() + ylim(0, 1) + ylab('Glutamatergic %') +
+  xlab('Glutamatergic percentage')
+g3 = ggplot(temp_comp_df, aes(x = decile_label, y = egad_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Glutamatergic Co-expression module score') +
+  xlab('Glutamatergic percentage')
+#Supp. Figure 5
+g4 = grid.arrange(g2, g1, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-1.png)<!-- -->
+
+``` r
+#Supp. Figure 4
+g5 = grid.arrange(g2, g3, nrow = 2)
+```
+
+    ## Warning: Removed 1 row containing non-finite outside the scale range
+    ## (`stat_boxplot()`).
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-2.png)<!-- -->
+
+``` r
+comp_scores = comp_for_clustering[ ,'GABAergic']
+#range(comp_scores)
+decile_label = rep('NA', length = nrow(comp_for_clustering))
+decile_label[comp_scores <= .10] = '[0-10%]'
+decile_label[comp_scores > .10 & comp_scores <= .20] = '(10-20%]'
+decile_label[comp_scores > .20 & comp_scores <= .30] = '(20-30%]'
+decile_label[comp_scores > .30 & comp_scores <= .40] = '(30-40%]'
+decile_label[comp_scores > .40 & comp_scores <= .50] = '(40-50%]'
+decile_label[comp_scores > .50 & comp_scores <= .60] = '(50-60%]'
+decile_label[comp_scores > .60 & comp_scores <= .70] = '(60-70%]'
+decile_label[comp_scores > .70 & comp_scores <= .80] = '(70-80%]'
+decile_label[comp_scores > .80 & comp_scores <= .90] = '(80-90%]'
+#Grab the preserved co-expression scores of that cell-type and add the celltype percentage of the datasets
+temp_comp_df = data.frame(sample_id = all_sample_meta$sample_ids[meta_index], pres_score = all_sample_meta$gaba_cons_coexp_metric[meta_index], 
+                          egad_score = all_sample_meta$egad_auc_gaba_markers[meta_index],
+                          decile_label = decile_label, comp_scores = comp_scores)
+temp_comp_df$decile_label = factor(temp_comp_df$decile_label, levels = c('[0-10%]','(10-20%]','(20-30%]','(30-40%]','(40-50%]','(50-60%]','(60-70%]','(70-80%]','(80-90%]'))
+
+g1 = ggplot(temp_comp_df, aes(x = decile_label, y = pres_score)) + geom_boxplot() + ylim(.4, 1) + ylab('GABAergic Preserved co-expression score') +
+  xlab('GABAergic percentage') 
+g2 = ggplot(temp_comp_df, aes(x = decile_label, y = comp_scores)) + geom_boxplot() + ylim(0, 1) + ylab('GABAergic %') +
+  xlab('GABAergic percentage')
+g3 = ggplot(temp_comp_df, aes(x = decile_label, y = egad_score)) + geom_boxplot() + ylim(.4, 1) + ylab('GABAergic Co-expression module score') +
+  xlab('GABAergic percentage')
+#Supp. Figure 5
+g4 = grid.arrange(g2, g1, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-3.png)<!-- -->
+
+``` r
+#Supp. Figure 4
+g5 = grid.arrange(g2, g3, nrow = 2)
+```
+
+    ## Warning: Removed 3 rows containing non-finite outside the scale range
+    ## (`stat_boxplot()`).
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-4.png)<!-- -->
+
+``` r
+comp_scores = comp_for_clustering[ ,'Non-neuronal']
+#range(comp_scores)
+decile_label = rep('NA', length = nrow(comp_for_clustering))
+decile_label[comp_scores <= .10] = '[0-10%]'
+decile_label[comp_scores > .10 & comp_scores <= .20] = '(10-20%]'
+decile_label[comp_scores > .20 & comp_scores <= .30] = '(20-30%]'
+decile_label[comp_scores > .30 & comp_scores <= .40] = '(30-40%]'
+decile_label[comp_scores > .40 & comp_scores <= .50] = '(40-50%]'
+decile_label[comp_scores > .50 & comp_scores <= .60] = '(50-60%]'
+#Grab the preserved co-expression scores of that cell-type and add the celltype percentage of the datasets
+temp_comp_df = data.frame(sample_id = all_sample_meta$sample_ids[meta_index], pres_score = all_sample_meta$nonN_cons_coexp_metric[meta_index], 
+                          egad_score = all_sample_meta$egad_auc_nonN_markers[meta_index],
+                          decile_label = decile_label, comp_scores = comp_scores)
+temp_comp_df$decile_label = factor(temp_comp_df$decile_label, levels = c('[0-10%]','(10-20%]','(20-30%]','(30-40%]','(40-50%]','(50-60%]'))
+
+g1 = ggplot(temp_comp_df, aes(x = decile_label, y = pres_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Non-neuronal Preserved co-expression score') +
+  xlab('Non-neuronal percentage') 
+g2 = ggplot(temp_comp_df, aes(x = decile_label, y = comp_scores)) + geom_boxplot() + ylim(0, 1) + ylab('Non-neuronal %') +
+  xlab('Non-neuronal percentage')
+g3 = ggplot(temp_comp_df, aes(x = decile_label, y = egad_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Non-neuronal Co-expression module score') +
+  xlab('Non-neuronal percentage')
+#Supp. Figure 5
+g4 = grid.arrange(g2, g1, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-5.png)<!-- -->
+
+``` r
+#Supp. Figure 4
+g5 = grid.arrange(g2, g3, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-6.png)<!-- -->
+
+``` r
+comp_scores = comp_for_clustering[ ,'Intermediate_Progenitor']
+#range(comp_scores)
+decile_label = rep('NA', length = nrow(comp_for_clustering))
+decile_label[comp_scores <= .05] = '[0-5%]'
+decile_label[comp_scores > .05 & comp_scores <= .10] = '(5-10%]'
+decile_label[comp_scores > .10 & comp_scores <= .15] = '(10-15%]'
+decile_label[comp_scores > .15 & comp_scores <= .20] = '(15-20%]'
+#Grab the preserved co-expression scores of that cell-type and add the celltype percentage of the datasets
+temp_comp_df = data.frame(sample_id = all_sample_meta$sample_ids[meta_index], pres_score = all_sample_meta$intProg_cons_coexp_metric[meta_index], 
+                          egad_score = all_sample_meta$egad_auc_intProg_markers[meta_index],
+                          decile_label = decile_label, comp_scores = comp_scores)
+temp_comp_df$decile_label = factor(temp_comp_df$decile_label, levels = c('[0-5%]','(5-10%]','(10-15%]','(15-20%]'))
+
+g1 = ggplot(temp_comp_df, aes(x = decile_label, y = pres_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Intermediate Progenitor Preserved co-expression score') +
+  xlab('Intermediate Progenitor percentage') 
+g2 = ggplot(temp_comp_df, aes(x = decile_label, y = comp_scores)) + geom_boxplot() + ylim(0, 1) + ylab('Intermediate Progenitor %') +
+  xlab('Intermediate Progenitor percentage')
+g3 = ggplot(temp_comp_df, aes(x = decile_label, y = egad_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Intermediate Progenitor Co-expression module score') +
+  xlab('Intermediate Progenitor percentage')
+#Supp. Figure 5
+g4 = grid.arrange(g2, g1, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-7.png)<!-- -->
+
+``` r
+#Supp. Figure 4
+g5 = grid.arrange(g2, g3, nrow = 2)
+```
+
+    ## Warning: Removed 3 rows containing non-finite outside the scale range
+    ## (`stat_boxplot()`).
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-8.png)<!-- -->
+
+``` r
+comp_scores = comp_for_clustering[ ,'Neural_Progenitor']
+#range(comp_scores)
+decile_label = rep('NA', length = nrow(comp_for_clustering))
+decile_label[comp_scores <= .10] = '[0-10%]'
+decile_label[comp_scores > .10 & comp_scores <= .20] = '(10-20%]'
+decile_label[comp_scores > .20 & comp_scores <= .30] = '(20-30%]'
+decile_label[comp_scores > .30 & comp_scores <= .40] = '(30-40%]'
+decile_label[comp_scores > .40 & comp_scores <= .50] = '(40-50%]'
+decile_label[comp_scores > .50 & comp_scores <= .60] = '(50-60%]'
+decile_label[comp_scores > .60 & comp_scores <= .70] = '(60-70%]'
+decile_label[comp_scores > .70 & comp_scores <= .80] = '(70-80%]'
+#Grab the preserved co-expression scores of that cell-type and add the celltype percentage of the datasets
+temp_comp_df = data.frame(sample_id = all_sample_meta$sample_ids[meta_index], pres_score = all_sample_meta$nProg_cons_coexp_metric[meta_index], 
+                          egad_score = all_sample_meta$egad_auc_nProg_markers[meta_index],
+                          decile_label = decile_label, comp_scores = comp_scores)
+temp_comp_df$decile_label = factor(temp_comp_df$decile_label, levels = c('[0-10%]','(10-20%]','(20-30%]','(30-40%]','(40-50%]','(50-60%]','(60-70%]','(70-80%]'))
+
+g1 = ggplot(temp_comp_df, aes(x = decile_label, y = pres_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Neural Progenitor Preserved co-expression score') +
+  xlab('Neural Progenitor percentage') 
+g2 = ggplot(temp_comp_df, aes(x = decile_label, y = comp_scores)) + geom_boxplot() + ylim(0, 1) + ylab('Neural Progenitor %') +
+  xlab('Neural Progenitor percentage')
+g3 = ggplot(temp_comp_df, aes(x = decile_label, y = egad_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Neural Progenitor Co-expression module score') +
+  xlab('Neural Progenitor percentage')
+#Supp. Figure 5
+g4 = grid.arrange(g2, g1, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-9.png)<!-- -->
+
+``` r
+#Supp. Figure 4
+g5 = grid.arrange(g2, g3, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-10.png)<!-- -->
+
+``` r
+comp_scores = comp_for_clustering[ ,'Dividing_Progenitor']
+#range(comp_scores)
+decile_label = rep('NA', length = nrow(comp_for_clustering))
+decile_label[comp_scores <= .10] = '[0-10%]'
+decile_label[comp_scores > .10 & comp_scores <= .20] = '(10-20%]'
+decile_label[comp_scores > .20 & comp_scores <= .30] = '(20-30%]'
+decile_label[comp_scores > .30 & comp_scores <= .40] = '(30-40%]'
+decile_label[comp_scores > .40 & comp_scores <= .50] = '(40-50%]'
+decile_label[comp_scores > .50 & comp_scores <= .60] = '(50-60%]'
+decile_label[comp_scores > .60 & comp_scores <= .70] = '(60-70%]'
+decile_label[comp_scores > .70 & comp_scores <= .80] = '(70-80%]'
+decile_label[comp_scores > .80 & comp_scores <= .90] = '(80-90%]'
+decile_label[comp_scores > .90 & comp_scores <= 1] = '(90-100%]'
+#Grab the preserved co-expression scores of that cell-type and add the celltype percentage of the datasets
+temp_comp_df = data.frame(sample_id = all_sample_meta$sample_ids[meta_index], pres_score = all_sample_meta$dividing_cons_coexp_metric[meta_index], 
+                          egad_score = all_sample_meta$egad_auc_divProg_markers[meta_index],
+                          decile_label = decile_label, comp_scores = comp_scores)
+temp_comp_df$decile_label = factor(temp_comp_df$decile_label, levels = c('[0-10%]','(10-20%]','(20-30%]','(30-40%]','(40-50%]','(50-60%]','(60-70%]','(70-80%]','(80-90%]','(90-100%]'))
+
+g1 = ggplot(temp_comp_df, aes(x = decile_label, y = pres_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Dividing Progenitor Preserved co-expression score') +
+  xlab('Dividing Progenitor percentage') 
+g2 = ggplot(temp_comp_df, aes(x = decile_label, y = comp_scores)) + geom_boxplot() + ylim(0, 1) + ylab('Dividing Progenitor %') +
+  xlab('Dividing Progenitor percentage')
+g3 = ggplot(temp_comp_df, aes(x = decile_label, y = egad_score)) + geom_boxplot() + ylim(.4, 1) + ylab('Dividing Progenitor Co-expression module score') +
+  xlab('Dividing Progenitor percentage')
+#Supp. Figure 5
+g4 = grid.arrange(g2, g1, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-11.png)<!-- -->
+
+``` r
+#Supp. Figure 4
+g5 = grid.arrange(g2, g3, nrow = 2)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/org_egad_compsition_deciles-12.png)<!-- -->
+
+## Supp. Figure 5A
+
+``` r
+non_neural_organoid_df = all_sample_meta %>% select(Protocol.classification.region, intProg_cons_coexp_metric, nProg_cons_coexp_metric, glut_cons_coexp_metric, gaba_cons_coexp_metric, nonN_cons_coexp_metric, micro_cons_coexp_metric )
+
+non_neural_organoid_df = reshape2::melt(non_neural_organoid_df)
+```
+
+    ## Using Protocol.classification.region as id variables
+
+``` r
+non_neural_organoid_df$data_label = as.character(non_neural_organoid_df$Protocol.classification.region)
+non_neural_organoid_df$data_label[as.character(non_neural_organoid_df$Protocol.classification.region) %in% c('vascular organoid','iPSC-microglia')] = 'Non-neural organoid'
+non_neural_organoid_df$data_label[!as.character(non_neural_organoid_df$Protocol.classification.region) %in% c('vascular organoid','iPSC-microglia')] = 'Neural organoid'
+
+non_neural_organoid_df$marker_label = as.character(non_neural_organoid_df$variable)
+non_neural_organoid_df$marker_label[as.character(non_neural_organoid_df$variable) == 'micro_cons_coexp_metric'] = 'Microglia/Immune'
+non_neural_organoid_df$marker_label[as.character(non_neural_organoid_df$variable) != 'micro_cons_coexp_metric'] = 'Neural lineage cell-type'
+
+
+ggplot(non_neural_organoid_df, aes(x = data_label, y = value)) + facet_wrap(~factor(marker_label, c('Neural lineage cell-type','Microglia/Immune'))) + 
+  geom_boxplot() + ylab('Preserved co-expression score')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/neural_v_non_neural_coexp_scores-1.png)<!-- -->
+
+``` r
+non_neural_organoid_df = all_sample_meta %>% select(Protocol.classification.region, egad_auc_gaba_markers, egad_auc_glut_markers, egad_auc_nonN_markers,
+                                                    egad_auc_intProg_markers, egad_auc_nProg_markers, egad_auc_micro_markers)
+
+non_neural_organoid_df = reshape2::melt(non_neural_organoid_df)
+```
+
+    ## Using Protocol.classification.region as id variables
+
+``` r
+non_neural_organoid_df$data_label = as.character(non_neural_organoid_df$Protocol.classification.region)
+non_neural_organoid_df$data_label[as.character(non_neural_organoid_df$Protocol.classification.region) %in% c('vascular organoid','iPSC-microglia')] = 'Non-neural organoid'
+non_neural_organoid_df$data_label[!as.character(non_neural_organoid_df$Protocol.classification.region) %in% c('vascular organoid','iPSC-microglia')] = 'Neural organoid'
+
+non_neural_organoid_df$marker_label = as.character(non_neural_organoid_df$variable)
+non_neural_organoid_df$marker_label[as.character(non_neural_organoid_df$variable) == 'egad_auc_micro_markers'] = 'Microglia/Immune'
+non_neural_organoid_df$marker_label[as.character(non_neural_organoid_df$variable) != 'egad_auc_micro_markers'] = 'Neural lineage cell-type'
+
+
+ggplot(non_neural_organoid_df, aes(x = data_label, y = value)) + facet_wrap(~factor(marker_label, c('Neural lineage cell-type','Microglia/Immune'))) + 
+  geom_boxplot() + ylab('Co-expression module score')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/neural_v_non_neural_coexp_scores-2.png)<!-- -->
