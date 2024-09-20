@@ -812,6 +812,238 @@ Heatmap(cor_cons_coexp_metrix, name = 'spearman',
 
 Need to go back and save the data files
 
+``` r
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+
+fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_v2.csv.gz")
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+
+#contains all_gene_org_pres_fetal_mat, all_gene_fetal_pres_fetal_mat
+load(file = "data_for_plots/all_gene_and_dataset_presCoexp_mats_v3.Rdata")
+
+pasca_cluster_de = read.csv('data_for_plots/pasca_morpho_screen_org_cluster_DE.csv')
+#Add rank column
+pasca_cluster_de = pasca_cluster_de %>% group_by(cluster) %>% mutate(rank = 1:length(gene) )
+pasca_cluster_annotations = read.csv('data_for_plots/pasca_morpho_cluster_annotations.csv')
+
+
+n_datasets = nrow(all_sample_meta)
+
+all_cluster_nums = c()
+all_cluster_annotations = c()
+all_dataset_ids = c()
+all_dataset_protocols = c()
+all_cluster_presCoexp = c()
+
+for(i in 0:max(pasca_cluster_de$cluster)){
+
+  cluster_annotation = pasca_cluster_annotations$name_fig2[pasca_cluster_annotations$cluster == i]
+  #Grab markers for that cluster
+  cluster_markers = filter(pasca_cluster_de, cluster == i & rank <= 10)$gene
+  
+  #Index for the average marker expression and the average preserved co-exp aurocs
+  gene_index = rownames(all_gene_org_pres_fetal_mat) %in% cluster_markers
+  num_go = sum(gene_index)
+  avg_presCoexp_vec = colMeans(all_gene_org_pres_fetal_mat[gene_index, ], na.rm = T)
+  
+  all_cluster_nums = c(all_cluster_nums, rep(i, length = n_datasets))
+  all_cluster_annotations = c(all_cluster_annotations, rep(cluster_annotation, length = n_datasets))
+  all_dataset_ids = c(all_dataset_ids, all_sample_meta$sample_ids)
+  all_dataset_protocols = c(all_dataset_protocols, all_sample_meta$Protocol.classification)
+  all_cluster_presCoexp = c(all_cluster_presCoexp, unname(avg_presCoexp_vec))
+
+
+}
+org_celltype_presCoexp_df = data.frame(cluster = all_cluster_nums, annotation = all_cluster_annotations, org_dataset = all_dataset_ids,
+                                       org_protocol = all_dataset_protocols, presCoexp = all_cluster_presCoexp)
+
+temp_df = filter(org_celltype_presCoexp_df, annotation %in% c('vGlut-1/2 Telencephalon', 'Dop. MB', 'vGlut-2 MB', 'vGlut-2 Thal') & 
+                   org_protocol %in% c('directed dorsal forebrain','directed ventral midbrain') )
+temp_df$org_protocol = factor(temp_df$org_protocol, levels = c('directed dorsal forebrain','directed ventral midbrain'))
+ggplot(temp_df, aes(x = org_protocol, y = presCoexp, fill = annotation )) + geom_boxplot() + ylim(.4, 1)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/fine_cell_type_specific_coexp-1.png)<!-- -->
+
+``` r
+num_markers = 20
+cell_type = 'vGlut-1/2 Telencephalon'
+cell_type_clusters = filter(pasca_cluster_annotations, name_fig2 == cell_type)$cluster
+
+temp_pres_df = matrix(nrow = nrow(all_sample_meta), ncol = length(cell_type_clusters), dimnames = list(all_sample_meta$sample_ids, cell_type_clusters))
+
+for(i in 1:length(cell_type_clusters)){
+
+  #Grab markers for that cluster
+  cluster_markers = filter(pasca_cluster_de, cluster == cell_type_clusters[i] & rank <= num_markers)$gene
+  cluster_markers = cluster_markers[!cluster_markers %in% glut_markers$gene]
+  if(length(cluster_markers) >10){cluster_markers = cluster_markers[1:10]}
+  #Index for the average marker expression and the average preserved co-exp aurocs
+  gene_index = rownames(all_gene_org_pres_fetal_mat) %in% cluster_markers
+  num_go = sum(gene_index)
+  print(sprintf('%s: %i markers',cell_type, num_go))
+  avg_presCoexp_vec = colMeans(all_gene_org_pres_fetal_mat[gene_index, ], na.rm = T)
+
+  temp_pres_df[ ,i] = avg_presCoexp_vec
+  
+}
+```
+
+    ## [1] "vGlut-1/2 Telencephalon: 10 markers"
+    ## [1] "vGlut-1/2 Telencephalon: 10 markers"
+    ## [1] "vGlut-1/2 Telencephalon: 8 markers"
+    ## [1] "vGlut-1/2 Telencephalon: 10 markers"
+    ## [1] "vGlut-1/2 Telencephalon: 9 markers"
+
+``` r
+y = rowMeans(temp_pres_df)
+x = all_sample_meta$glut_cons_coexp_metric
+correlation = cor(x, y, method = 'spearman')
+par(pty = 's')
+plot(x, y, xlim = c(0,1), ylim = c(0,1), ylab = cell_type, xlab = 'Glutamatergic MetaMarkers', main = correlation )
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/fine_cell_type_specific_coexp-2.png)<!-- -->
+
+``` r
+cell_type = 'vGlut-2 MB'
+cell_type_clusters = filter(pasca_cluster_annotations, name_fig2 == cell_type)$cluster
+
+temp_pres_df = matrix(nrow = nrow(all_sample_meta), ncol = length(cell_type_clusters), dimnames = list(all_sample_meta$sample_ids, cell_type_clusters))
+
+for(i in 1:length(cell_type_clusters)){
+
+  #Grab markers for that cluster
+  cluster_markers = filter(pasca_cluster_de, cluster == cell_type_clusters[i] & rank <= num_markers)$gene
+  cluster_markers = cluster_markers[!cluster_markers %in% glut_markers$gene]
+  if(length(cluster_markers) >10){cluster_markers = cluster_markers[1:10]}
+  #Index for the average marker expression and the average preserved co-exp aurocs
+  gene_index = rownames(all_gene_org_pres_fetal_mat) %in% cluster_markers
+  num_go = sum(gene_index)
+  print(sprintf('%s: %i markers',cell_type, num_go))
+  avg_presCoexp_vec = colMeans(all_gene_org_pres_fetal_mat[gene_index, ], na.rm = T)
+
+  temp_pres_df[ ,i] = avg_presCoexp_vec
+  
+}
+```
+
+    ## [1] "vGlut-2 MB: 8 markers"
+    ## [1] "vGlut-2 MB: 6 markers"
+
+``` r
+y = rowMeans(temp_pres_df)
+x = all_sample_meta$glut_cons_coexp_metric
+correlation = cor(x, y, method = 'spearman')
+par(pty = 's')
+plot(x, y, xlim = c(0,1), ylim = c(0,1), ylab = cell_type, xlab = 'Glutamatergic MetaMarkers', main = correlation )
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/fine_cell_type_specific_coexp-3.png)<!-- -->
+
+``` r
+cell_type = 'Forebrain MEIS2+ GABA'
+cell_type_clusters = filter(pasca_cluster_annotations, name_fig2 == cell_type)$cluster
+
+temp_pres_df = matrix(nrow = nrow(all_sample_meta), ncol = length(cell_type_clusters), dimnames = list(all_sample_meta$sample_ids, cell_type_clusters))
+
+for(i in 1:length(cell_type_clusters)){
+
+  #Grab markers for that cluster
+  cluster_markers = filter(pasca_cluster_de, cluster == cell_type_clusters[i] & rank <= num_markers)$gene
+  cluster_markers = cluster_markers[!cluster_markers %in% gaba_markers$gene]
+  if(length(cluster_markers) >10){cluster_markers = cluster_markers[1:10]}
+  #Index for the average marker expression and the average preserved co-exp aurocs
+  gene_index = rownames(all_gene_org_pres_fetal_mat) %in% cluster_markers
+  num_go = sum(gene_index)
+  print(sprintf('%s: %i markers',cell_type, num_go))
+  avg_presCoexp_vec = colMeans(all_gene_org_pres_fetal_mat[gene_index, ], na.rm = T)
+
+  temp_pres_df[ ,i] = avg_presCoexp_vec
+  
+}
+```
+
+    ## [1] "Forebrain MEIS2+ GABA: 8 markers"
+
+``` r
+y = temp_pres_df[ ,1]
+x = all_sample_meta$gaba_cons_coexp_metric
+correlation = cor(x, y, method = 'spearman')
+par(pty = 's')
+plot(x, y, xlim = c(0,1), ylim = c(0,1), ylab = cell_type, xlab = 'GABAergic MetaMarkers', main = correlation )
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/fine_cell_type_specific_coexp-4.png)<!-- -->
+
+``` r
+cell_type = 'Forebrain NKX2-1+ GABA'
+cell_type_clusters = filter(pasca_cluster_annotations, name_fig2 == cell_type)$cluster
+
+temp_pres_df = matrix(nrow = nrow(all_sample_meta), ncol = length(cell_type_clusters), dimnames = list(all_sample_meta$sample_ids, cell_type_clusters))
+
+for(i in 1:length(cell_type_clusters)){
+
+  #Grab markers for that cluster
+  cluster_markers = filter(pasca_cluster_de, cluster == cell_type_clusters[i] & rank <= num_markers)$gene
+  cluster_markers = cluster_markers[!cluster_markers %in% gaba_markers$gene]
+  if(length(cluster_markers) >10){cluster_markers = cluster_markers[1:10]}
+  #Index for the average marker expression and the average preserved co-exp aurocs
+  gene_index = rownames(all_gene_org_pres_fetal_mat) %in% cluster_markers
+  num_go = sum(gene_index)
+  print(sprintf('%s: %i markers',cell_type, num_go))
+  avg_presCoexp_vec = colMeans(all_gene_org_pres_fetal_mat[gene_index, ], na.rm = T)
+
+  temp_pres_df[ ,i] = avg_presCoexp_vec
+  
+}
+```
+
+    ## [1] "Forebrain NKX2-1+ GABA: 8 markers"
+    ## [1] "Forebrain NKX2-1+ GABA: 10 markers"
+
+``` r
+y = rowMeans(temp_pres_df)
+x = all_sample_meta$gaba_cons_coexp_metric
+correlation = cor(x, y, method = 'spearman')
+par(pty = 's')
+plot(x, y, xlim = c(0,1), ylim = c(0,1), ylab = cell_type, xlab = 'GABAergic MetaMarkers', main = correlation )
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/fine_cell_type_specific_coexp-5.png)<!-- -->
+
 ## Figure 4F
 
 ``` r
@@ -908,6 +1140,21 @@ left_sig_plot
 ## Figure 4G
 
 Need to go back and save the go enrichment results
+
+``` r
+#Contains the go_enrich_results dataframe
+load(file = 'data_for_plots/full_data_GO_enrich_bad_org_genes.Rdata')
+
+go_enrich_results_filt = filter(go_enrich_results, N_univ <= 500 & N_univ >= 10) %>% arrange(adj_pvals)
+
+top_10_go = go_enrich_results_filt[1:10 , ]
+top_10_go = top_10_go %>% arrange(desc(adj_pvals))
+top_10_go$description = factor(top_10_go$description, levels = c(top_10_go$description))
+ggplot(top_10_go, aes(x = -log10(adj_pvals), y = description)) + geom_bar(stat = 'identity') +
+  geom_vline(xintercept = -log10(.05), col = 'red', linetype = 'dashed')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/ecm_barplot-1.png)<!-- -->
 
 ## Figure 5B
 
@@ -2391,6 +2638,197 @@ ggplot(all_sample_meta_subset, aes(x = variable, y = value, fill = treatment )) 
 ```
 
 ![](figure_plots_with_data_code_files/figure-gfm/normal_vs_treated_org_scores-2.png)<!-- -->
+
+## Supp. Figure 8 B and C
+
+``` r
+#Contains the org_all_gene_presCoexp_df, fetal_all_gene_presCoexp_df dataframes
+load(file = "data_for_plots/all_gene_presCoexp_mats_v3.Rdata")
+org_exp_df = org_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 5) %>% arrange(desc(mean_org_preCoexp))
+fetal_exp_df = fetal_all_gene_presCoexp_df %>% filter(num_dataset_gene_not_expressed <= 5) %>% arrange(desc(mean_fetal_preCoexp))
+
+shared_genes = intersect(fetal_exp_df$gene, org_exp_df$gene)
+
+org_exp_df = org_exp_df[org_exp_df$gene %in% shared_genes, ]
+fetal_exp_df = fetal_exp_df[fetal_exp_df$gene %in% shared_genes, ]
+
+#Reorder organoid to match fetal
+index = match(fetal_exp_df$gene, org_exp_df$gene)
+org_exp_df = org_exp_df[index, ]
+
+bad_org_index = org_exp_df$mean_org_preCoexp< .7 & fetal_exp_df$mean_fetal_preCoexp >= .99
+
+par(pty = 's')
+plot(fetal_exp_df$mean_fetal_preCoexp, org_exp_df$mean_org_preCoexp, cex = .5, xlim = c(0,1), ylim = c(0,1))
+points(fetal_exp_df$mean_fetal_preCoexp[bad_org_index], org_exp_df$mean_org_preCoexp[bad_org_index], col ='red', cex = .75, pch = 16)
+abline(a = 0, b = 1,col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/bad_org_genes-1.png)<!-- -->
+
+``` r
+#Contains the just_neuron_fetal_exp_df, just_neuron_org_exp_df dataframes
+load(file = 'data_for_plots/just_neuron_exp_df.Rdata')
+
+bad_org_index = just_neuron_org_exp_df$mean_org_preCoexp<= .75 & just_neuron_fetal_exp_df$mean_fetal_preCoexp >= .9
+
+par(pty = 's')
+plot(just_neuron_fetal_exp_df$mean_fetal_preCoexp, just_neuron_org_exp_df$mean_org_preCoexp, cex = .5, xlim = c(0,1), ylim = c(0,1))
+points(just_neuron_fetal_exp_df$mean_fetal_preCoexp[bad_org_index], just_neuron_org_exp_df$mean_org_preCoexp[bad_org_index], col ='red', cex = .75, pch = 16)
+abline(a = 0, b = 1,col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/bad_org_genes-2.png)<!-- -->
+
+``` r
+#Contains the just_neuron_go_enrich_results 
+load(file = 'data_for_plots/just_neurons_GO_enrich_bad_org_genes.Rdata')
+
+go_enrich_results_filt = filter(just_neuron_go_enrich_results, N_univ <= 500 & N_univ >= 10) %>% arrange(pvals)
+
+top_10_go = go_enrich_results_filt[1:10 , ]
+top_10_go = top_10_go %>% arrange(desc(adj_pvals))
+top_10_go$description = factor(top_10_go$description, levels = c(top_10_go$description))
+ggplot(top_10_go, aes(x = -log10(adj_pvals), y = description)) + geom_bar(stat = 'identity') +
+  geom_vline(xintercept = -log10(.05), col = 'red', linetype = 'dashed')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/bad_org_genes-3.png)<!-- -->
+
+## Supp. Figure 8 D
+
+``` r
+#Contains the all_disc1_data dataframe
+load(file = "data_for_plots/disc1_data.Rdata")
+
+ggplot(all_disc1_data, aes(x = log10(mean_disc1_exp +1), y = disc1_pres_coexp, color = data_label)) + geom_point() + xlab('log10(CPM + 1)') + 
+  ylab('Preserved Coexpression DISC1 AUROC')
+```
+
+    ## Warning: Removed 1 row containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+![](figure_plots_with_data_code_files/figure-gfm/disc1_expression-1.png)<!-- -->
+
+``` r
+g1 = ggplot(all_disc1_data, aes(x = data_label, y = log10(mean_disc1_exp +1))) + geom_boxplot() + ylab('log10(CPM + 1)')
+g2 = ggplot(all_disc1_data, aes(x = data_label, y = disc1_pres_coexp)) + geom_boxplot() + ylab('Preserved Coexpression DISC1 AUROC')
+g3 = gridExtra::grid.arrange(g1, g2, nrow = 1)
+```
+
+    ## Warning: Removed 1 row containing non-finite outside the scale range
+    ## (`stat_boxplot()`).
+
+![](figure_plots_with_data_code_files/figure-gfm/disc1_expression-2.png)<!-- -->
+
+## Supp. Figure 8 E and F
+
+``` r
+#Contains the adult_org_glut_cons_coexp_score,  adult_org_gaba_cons_coexp_score,  adult_org_nonN_cons_coexp_score, and mean_adult_to_fetal vectors
+load(file = 'data_for_plots/adult_pres_coexp_scores.Rdata')
+
+par(pty = 's')
+plot(all_sample_meta$glut_cons_coexp_metric, adult_org_glut_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal Glut coexp', ylab = 'Org. conservation of Adult Glut coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'Glutamatergic')
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/adult_pres_coexp_scores-1.png)<!-- -->
+
+``` r
+par(pty = 's')
+plot(all_sample_meta$gaba_cons_coexp_metric, adult_org_gaba_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal GABA coexp', ylab = 'Org. conservation of Adult GABA coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'GABAergic')
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/adult_pres_coexp_scores-2.png)<!-- -->
+
+``` r
+par(pty = 's')
+plot(all_sample_meta$nonN_cons_coexp_metric, adult_org_nonN_cons_coexp_score, 
+     xlab = 'Org. conservation of fetal nonN coexp', ylab = 'Org. conservation of Adult nonN coexp',
+     xlim = c(.3,1), ylim = c(.3,1), main = 'Non-neuronal')
+abline(a = 0, b = 1, col = 'red')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/adult_pres_coexp_scores-3.png)<!-- -->
+
+``` r
+#Supp. Figure 8 F
+#Contains the mean_fetal_consCoexp_scores vectors
+load('data_for_plots/mean_global_consCoexp_org_and_fetal_v3.Rdata')
+
+par(pty = 's')
+hist(all_sample_meta$genome_cons_coexp_score, breaks = seq(.5,1,.01), xlim = c(.5,1), 
+     xlab = 'Mean Fetal Preserved Co-expression AUROC', main = '')
+legend("topright", c("Organoid", 'Fetal', "Adult"), col=c("grey",rgb(0,0,1,.85), "red"), lwd=10, cex = .75)
+abline(v = mean_adult_to_fetal, col = 'red', lwd = 3)
+hist(mean_fetal_consCoexp_scores, breaks = seq(.5,1,.01), add = T, col = rgb(0,0,1,.85))
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/adult_pres_coexp_scores-4.png)<!-- -->
+
+``` r
+#Contains the fetal_downsamp_fetal_consCoexp_df dataframe
+load('data_for_plots/fetal_downsamp_fetal_consCoexp_df.Rdata')
+
+org_global_fetal_consCoexp_df = data.frame(mean_auroc =  all_sample_meta$genome_cons_coexp_score, cell_num =as.numeric(all_sample_meta$post_qc_cell_number))
+
+ggplot(fetal_downsamp_fetal_consCoexp_df, aes(x = log10(cell_num), y = mean_auroc, color = 'Fetal')) + geom_point() + geom_line() +
+  geom_errorbar(aes(ymin = bottom_error, ymax = top_error, color = 'Fetal'), width = .3) +
+  geom_hline(yintercept = mean_adult_to_fetal,color = 'red') +
+  geom_point(data = org_global_fetal_consCoexp_df, aes(x = log10(cell_num), y = mean_auroc, color = 'Organoid'), size = 2 ) +
+  xlab('log10( Number of cells )') + ylab('Mean global fetal preserved co-expression score') + ylim(.5, .85) +
+  scale_color_manual(breaks = c('Organoid','Fetal','Adult'), 
+                     values = c('Organoid' = 'black', 'Fetal'= 'blue', 'Adult' ='red')) +
+  theme(axis.text = element_text(size = 12))
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/adult_pres_coexp_scores-5.png)<!-- -->
+
+## Supp. Figure 8 G
+
+``` r
+#Contains the pasca_consCoexp_score_df, mean_pasca_consCoexp_df dataframes
+load('data_for_plots/pasca_fetal_consCoexp_v2.Rdata')
+
+#Get the means of the non tranplanted data
+fetal_glut_nonT_mean = mean(filter(pasca_consCoexp_score_df,transplanted == 'non-transplanted' & Var1 == 'glut_scores')$value)
+fetal_gaba_nonT_mean = mean(filter(pasca_consCoexp_score_df,transplanted == 'non-transplanted' & Var1 == 'gaba_scores')$value)
+fetal_nonN_nonT_mean = mean(filter(pasca_consCoexp_score_df, transplanted == 'non-transplanted' & Var1 == 'nonN_scores')$value)
+
+
+mean_norm_vec = rep(NA, length = nrow(pasca_consCoexp_score_df))
+
+glut_index = pasca_consCoexp_score_df$Var1 == 'glut_scores'
+mean_norm_vec[glut_index] = pasca_consCoexp_score_df$value[glut_index] / fetal_glut_nonT_mean
+gaba_index = pasca_consCoexp_score_df$Var1 == 'gaba_scores'
+mean_norm_vec[gaba_index] = pasca_consCoexp_score_df$value[gaba_index] / fetal_gaba_nonT_mean
+nonN_index = pasca_consCoexp_score_df$Var1 == 'nonN_scores'
+mean_norm_vec[nonN_index] = pasca_consCoexp_score_df$value[nonN_index] / fetal_nonN_nonT_mean
+
+mean_norm_vec = log(mean_norm_vec, base = 2)
+pasca_consCoexp_score_df$nonT_FC = mean_norm_vec
+pasca_consCoexp_score_df$Var1 = factor(pasca_consCoexp_score_df$Var1 , levels = c('gaba_scores','glut_scores','nonN_scores'))
+
+ggplot(filter(pasca_consCoexp_score_df,Var1 %in% c('glut_scores','gaba_scores','nonN_scores')), aes(x = transplanted, y = nonT_FC)) + 
+  geom_point(size = 2, alpha = .5) + facet_wrap(~Var1) +
+  ylab('log2(Non-transplanted fold change)') + ggtitle('Preservation of Fetal Co-expression')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/transplant_org_scores-1.png)<!-- -->
+
+``` r
+load('data_for_plots/pasca_adult_df.Rdata')
+
+ggplot(pasca_adult_df, aes(x = Condition, y = nonT_FC)) + geom_point(size = 2, alpha = .5) + facet_wrap(~variable) +
+  ylab('log2(Non-transplanted fold change)') + ggtitle('Preservation of Adult Co-expression')
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/transplant_org_scores-2.png)<!-- -->
 
 ## Supp. Figure 9 A
 
