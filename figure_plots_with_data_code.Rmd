@@ -1586,3 +1586,641 @@ ggplot(non_neural_organoid_df, aes(x = data_label, y = value)) + facet_wrap(~fac
 ```
 
 
+
+## Supp. Figure 6
+
+```{r cross_region_cell_num}
+#Contains the all_region_df dataframe
+load('/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/all_region_presCoexp_v2.Rdata')
+
+#Supp. Figure 6A
+#Cell number by region
+temp_df = all_region_df %>% select(dataset_id, region, num_cells)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ggtitle('All regions') + ylab('Cell number')
+
+
+
+#Intermediate progenitors
+temp_df = all_region_df %>% select(dataset_id, region, intProg_presCoexp)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ylim(.45, 1) + geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ggtitle('Primary tissue Intermediate progenitors') + ylab('Preserved Co-expression score')
+
+#Neural progenitors
+temp_df = all_region_df %>% select(dataset_id, region, nProg_presCoexp)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ylim(.45, 1) + geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ggtitle('Primary tissue Neural progenitors') + ylab('Preserved Co-expression score')
+
+#Dividing progenitors
+temp_df = all_region_df %>% select(dataset_id, region, divProg_presCoexp)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ylim(.45, 1) + geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ggtitle('Primary tissue Dividing progenitors') + ylab('Preserved Co-expression score')
+
+#Glutamatergic
+temp_df = all_region_df %>% select(dataset_id, region, glut_presCoexp)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ylim(.45, 1) + geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ggtitle('Primary tissue Glutamatergic neurons') + ylab('Preserved Co-expression score')
+
+#GABAergic
+temp_df = all_region_df %>% select(dataset_id, region, gaba_presCoexp)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ylim(.45, 1) + geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ggtitle('Primary tissue GABAergic neurons') + ylab('Preserved Co-expression score')
+
+#Non-neuronal
+temp_df = all_region_df %>% select(dataset_id, region, nonN_presCoexp)
+temp_df = reshape2::melt(temp_df)
+
+summary_df = temp_df %>% group_by(region) %>% summarize(mean = mean(value)) %>% arrange(desc(mean))
+temp_df$region = factor(temp_df$region, levels = c(summary_df$region))
+
+ggplot(temp_df, aes(x = region, y = value)) + geom_violin(scale = 'width', width = .5) + 
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(position = position_jitter(seed = 1, width = 0.05)) +
+  ylim(.45, 1) + geom_hline(yintercept = .5, color = 'red', linetype = 'dashed') +
+  ggtitle('Primary tissue Non-neuronal') + ylab('Preserved Co-expression score')
+
+```
+
+
+
+## Supp. Figure 7
+
+
+```{r binned_org_primary_tiss_pres_coexp_comparison}
+
+fetal_cell_num_bins = rep('[100, 2500)', length = nrow(all_region_df))
+fetal_cell_num_bins[all_region_df$num_cells >=2500 & all_region_df$num_cells < 5000 ] = '[2500, 5000)'
+fetal_cell_num_bins[all_region_df$num_cells >=5000 & all_region_df$num_cells < 7500 ] = '[5000, 7500)'
+fetal_cell_num_bins[all_region_df$num_cells >=7500 & all_region_df$num_cells < 10000 ] = '[7500, 10000)'
+fetal_cell_num_bins[all_region_df$num_cells >=10000 & all_region_df$num_cells < 20000 ] = '[10000, 20000)'
+fetal_cell_num_bins[all_region_df$num_cells >=20000 & all_region_df$num_cells < 30000 ] = '[20000, 30000)'
+fetal_cell_num_bins[all_region_df$num_cells >=30000 & all_region_df$num_cells < 40000 ] = '[30000, 40000)'
+fetal_cell_num_bins[all_region_df$num_cells >=40000 & all_region_df$num_cells < 80000 ] = '[40000, 80000)'
+
+all_region_df$fetal_cell_num_bins = fetal_cell_num_bins
+
+org_cell_num_bins = rep('[100, 2500)', length = nrow(all_sample_meta))
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=2500 & all_sample_meta$post_qc_cell_number < 5000 ] = '[2500, 5000)'
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=5000 & all_sample_meta$post_qc_cell_number < 7500 ] = '[5000, 7500)'
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=7500 & all_sample_meta$post_qc_cell_number < 10000 ] = '[7500, 10000)'
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=10000 & all_sample_meta$post_qc_cell_number < 20000 ] = '[10000, 20000)'
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=20000 & all_sample_meta$post_qc_cell_number < 30000 ] = '[20000, 30000)'
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=30000 & all_sample_meta$post_qc_cell_number < 40000 ] = '[30000, 40000)'
+org_cell_num_bins[all_sample_meta$post_qc_cell_number >=40000 & all_sample_meta$post_qc_cell_number < 80000 ] = '[40000, 80000)'
+
+all_sample_meta$org_cell_num_bins = org_cell_num_bins
+
+
+all_region_df$fetal_cell_num_bins = factor(all_region_df$fetal_cell_num_bins, levels = c('[100, 2500)','[2500, 5000)','[5000, 7500)', '[7500, 10000)','[10000, 20000)', '[20000, 30000)',
+                                                                                         '[30000, 40000)','[40000, 80000)' ))
+all_sample_meta$org_cell_num_bins = factor(all_sample_meta$org_cell_num_bins, levels = c('[100, 2500)','[2500, 5000)','[5000, 7500)', '[7500, 10000)','[10000, 20000)', '[20000, 30000)',
+                                                                                         '[30000, 40000)','[40000, 80000)' ))
+
+cell_num_df = data.frame(bins = c(all_region_df$fetal_cell_num_bins, all_sample_meta$org_cell_num_bins), 
+                         nProg_scores = c(all_region_df$nProg_presCoexp, all_sample_meta$nProg_cons_coexp_metric),
+                         divProg_scores = c(all_region_df$divProg_presCoexp, all_sample_meta$dividing_cons_coexp_metric),
+                         intProg_scores = c(all_region_df$intProg_presCoexp, all_sample_meta$intProg_cons_coexp_metric),
+                         gaba_scores = c(all_region_df$gaba_presCoexp, all_sample_meta$gaba_cons_coexp_metric),
+                         glut_scores = c(all_region_df$glut_presCoexp, all_sample_meta$glut_cons_coexp_metric),
+                         nonN_scores = c(all_region_df$nonN_presCoexp, all_sample_meta$nonN_cons_coexp_metric),
+                         micro_scores = c(all_region_df$micro_presCoexp, all_sample_meta$micro_cons_coexp_metric),
+                         labels = c(rep('Primary tissue', length = nrow(all_region_df)), rep('Organoid', length = nrow(all_sample_meta)))
+                         ) 
+
+ggplot(cell_num_df, aes(x = bins, y = nProg_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('Neural Prog. preserved co-expression (AUROC)')
+
+ggplot(cell_num_df, aes(x = bins, y = divProg_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('Dividing Prog. preserved co-expression (AUROC)')
+
+ggplot(cell_num_df, aes(x = bins, y = intProg_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('Intermediate Prog. preserved co-expression (AUROC)')
+
+ggplot(cell_num_df, aes(x = bins, y = glut_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('Glutamatergic preserved co-expression (AUROC)')
+
+ggplot(cell_num_df, aes(x = bins, y = gaba_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('GABAergic preserved co-expression (AUROC)')
+
+ggplot(cell_num_df, aes(x = bins, y = nonN_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Number of cells') + ylab('Non-neuronal preserved co-expression (AUROC)')
+
+
+
+#nFeatures
+fetal_feature_bins = rep('[100, 1000)', length = nrow(all_region_df))
+fetal_feature_bins[all_region_df$median_feature >=1000 & all_region_df$median_feature < 2000 ] = '[1000, 2000)'
+fetal_feature_bins[all_region_df$median_feature >=2000 & all_region_df$median_feature < 3000 ] = '[2000, 3000)'
+fetal_feature_bins[all_region_df$median_feature >=3000 & all_region_df$median_feature < 4000 ] = '[3000, 4000)'
+fetal_feature_bins[all_region_df$median_feature >=4000 & all_region_df$median_feature < 5000 ] = '[4000, 5000)'
+fetal_feature_bins[all_region_df$median_feature >=5000 & all_region_df$median_feature < 6000 ] = '[5000, 6000)'
+all_region_df$fetal_feature_bins = fetal_feature_bins
+
+
+org_feature_bins = rep('[100, 1000)', length = nrow(all_sample_meta))
+org_feature_bins[all_sample_meta$median_feature >=1000 & all_sample_meta$median_feature < 2000 ] = '[1000, 2000)'
+org_feature_bins[all_sample_meta$median_feature >=2000 & all_sample_meta$median_feature < 3000 ] = '[2000, 3000)'
+org_feature_bins[all_sample_meta$median_feature >=3000 & all_sample_meta$median_feature < 4000 ] = '[3000, 4000)'
+org_feature_bins[all_sample_meta$median_feature >=4000 & all_sample_meta$median_feature < 5000 ] = '[4000, 5000)'
+org_feature_bins[all_sample_meta$median_feature >=5000 & all_sample_meta$median_feature < 6000 ] = '[5000, 6000)'
+all_sample_meta$org_feature_bins = org_feature_bins
+
+
+all_region_df$fetal_feature_bins = factor(all_region_df$fetal_feature_bins, levels = c('[100, 1000)','[1000, 2000)','[2000, 3000)', '[3000, 4000)','[4000, 5000)', '[5000, 6000)'))
+all_sample_meta$org_feature_bins = factor(all_sample_meta$org_feature_bins, levels = c('[100, 1000)','[1000, 2000)','[2000, 3000)', '[3000, 4000)','[4000, 5000)', '[5000, 6000)'))
+
+feature_num_df = data.frame(bins = c(all_region_df$fetal_feature_bins, all_sample_meta$org_feature_bins), 
+                         nProg_scores = c(all_region_df$nProg_presCoexp, all_sample_meta$nProg_cons_coexp_metric),
+                         divProg_scores = c(all_region_df$divProg_presCoexp, all_sample_meta$dividing_cons_coexp_metric),
+                         intProg_scores = c(all_region_df$intProg_presCoexp, all_sample_meta$intProg_cons_coexp_metric),
+                         gaba_scores = c(all_region_df$gaba_presCoexp, all_sample_meta$gaba_cons_coexp_metric),
+                         glut_scores = c(all_region_df$glut_presCoexp, all_sample_meta$glut_cons_coexp_metric),
+                         nonN_scores = c(all_region_df$nonN_presCoexp, all_sample_meta$nonN_cons_coexp_metric),
+                         micro_scores = c(all_region_df$micro_presCoexp, all_sample_meta$micro_cons_coexp_metric),
+                         labels = c(rep('Primary tissue', length = nrow(all_region_df)), rep('Organoid', length = nrow(all_sample_meta)))
+                         ) 
+
+ggplot(feature_num_df, aes(x = bins, y = nProg_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Median detected genes') + ylab('Neural Prog. preserved co-expression (AUROC)')
+
+ggplot(feature_num_df, aes(x = bins, y = divProg_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Median detected genes') + ylab('Dividing Prog. preserved co-expression (AUROC)')
+
+ggplot(feature_num_df, aes(x = bins, y = intProg_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Median detected genes') + ylab('Intermediate Prog. preserved co-expression (AUROC)')
+
+ggplot(feature_num_df, aes(x = bins, y = glut_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Median detected genes') + ylab('Glutamatergic preserved co-expression (AUROC)')
+
+ggplot(feature_num_df, aes(x = bins, y = gaba_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Median detected genes') + ylab('GABAergic preserved co-expression (AUROC)')
+
+ggplot(feature_num_df, aes(x = bins, y = nonN_scores, fill = labels)) + geom_boxplot(outlier.shape = NA) +
+   geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0), alpha = .5, pch = 21) +
+  scale_fill_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'grey')) +
+  scale_color_manual(values = c('Organoid' = 'red', 'Primary tissue' = 'black')) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  xlab('Median detected genes') + ylab('Non-neuronal preserved co-expression (AUROC)')
+
+```
+
+
+## Supp. Figure 8 A
+
+```{r normal_vs_treated_org_scores}
+
+
+all_sample_meta$treatment = all_sample_meta$Condition
+all_sample_meta$treatment[all_sample_meta$Condition != 'Normal'] = 'Treated'
+
+all_sample_meta_subset = all_sample_meta[ ,c('dividing_cons_coexp_metric','intProg_cons_coexp_metric', 'nProg_cons_coexp_metric',
+                                             'glut_cons_coexp_metric','gaba_cons_coexp_metric','nonN_cons_coexp_metric', 'treatment')] 
+all_sample_meta_subset = reshape2::melt(all_sample_meta_subset)
+order_names = filter(all_sample_meta_subset, treatment == 'Normal') %>% group_by(variable) %>% summarize(median = median(value)) %>% arrange(desc(median))
+order_names = as.character(order_names$variable)
+all_sample_meta_subset$variable = factor(all_sample_meta_subset$variable, levels = order_names)
+ggplot(all_sample_meta_subset, aes(x = variable, y = value, fill = treatment )) + geom_boxplot() +
+  ylab('Conserved Co-expression scores') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) 
+
+
+all_sample_meta_subset = all_sample_meta[ ,c('egad_auc_nProg_markers','egad_auc_intProg_markers', 'egad_auc_divProg_markers',
+                                             'egad_auc_glut_markers','egad_auc_gaba_markers','egad_auc_nonN_markers', 'treatment')] 
+all_sample_meta_subset = reshape2::melt(all_sample_meta_subset)
+order_names = filter(all_sample_meta_subset, treatment == 'Normal') %>% group_by(variable) %>% summarize(median = median(value)) %>% arrange(desc(median))
+order_names = as.character(order_names$variable)
+all_sample_meta_subset$variable = factor(all_sample_meta_subset$variable, levels = order_names)
+ggplot(all_sample_meta_subset, aes(x = variable, y = value, fill = treatment )) + geom_boxplot() +
+  ylab('EGAD AUROCs') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+
+```
+
+
+
+
+
+
+
+## Supp. Figure 9 A
+
+```{r global_preserved_coexp_qc}
+
+par(pty = 's')
+plot(all_sample_meta$post_qc_cell_number, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Cell number', ylab = 'Global preserved co-expression score',
+     ylim = c(.5, 1))
+
+plot(all_sample_meta$median_mito, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Median mitochondrial percentage', ylab = 'Global preserved co-expression score',
+     ylim = c(.5, 1))
+
+plot(all_sample_meta$median_feature, all_sample_meta$genome_cons_coexp_score, 
+     xlab = 'Median genes detected', ylab = 'Global preserved co-expression score',
+     ylim = c(.5, 1))
+
+
+ggplot(all_sample_meta, aes(y = genome_cons_coexp_score, x = Normalization.for.this.study )) + geom_boxplot() +
+  ylim(.5,.8) + ylab('Global Preserved Co-expression score') + xlab('Organoid dataset normalization') +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+
+
+```
+
+## Supp. Figure 9 B and C
+
+```{r qc_metrics_and_coexp_scores}
+
+#Preserved coexp score
+#Marker set specific ratios of padded zeros
+par(pty = 's')
+plot(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$nProg_cons_coexp_metric, main = 'Neural prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+
+plot(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$intProg_cons_coexp_metric, main = 'Intermediate prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+
+plot(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$dividing_cons_coexp_metric, main = 'Dividing prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+
+plot(all_sample_meta$go_glut_missing_ratio, all_sample_meta$glut_cons_coexp_metric, main = 'Glutamatergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+
+plot(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$gaba_cons_coexp_metric, main = 'GABAergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+
+plot(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$nonN_cons_coexp_metric, main = 'Non-neuronal', 
+     xlab = 'GO zero-padded ratio', ylab = 'Conserved Coexp score', ylim = c(.4, 1))
+
+#EGAD auroc. co-expression module scores
+
+plot(all_sample_meta$go_nProg_missing_ratio, all_sample_meta$egad_auc_nProg_markers, main = 'Neural prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(all_sample_meta$go_intProg_missing_ratio, all_sample_meta$egad_auc_intProg_markers, main = 'Intermediate prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(all_sample_meta$go_divProg_missing_ratio, all_sample_meta$egad_auc_divProg_markers, main = 'Dividing prog.', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(all_sample_meta$go_glut_missing_ratio, all_sample_meta$egad_auc_glut_markers, main = 'Glutamatergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(all_sample_meta$go_gaba_missing_ratio, all_sample_meta$egad_auc_gaba_markers, main = 'GABAergic', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(all_sample_meta$go_nonN_missing_ratio, all_sample_meta$egad_auc_nonN_markers, main = 'Non-neuronal', 
+     xlab = 'GO zero-padded ratio', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+
+
+#Median counts of marker sets
+#Preserved co-expression scores
+plot(log10(all_sample_meta$go_nProg_median_counts), all_sample_meta$nProg_cons_coexp_metric, main = 'Neural prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+
+plot(log10(all_sample_meta$go_intProg_median_counts), all_sample_meta$intProg_cons_coexp_metric, main = 'Intermediate prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+
+plot(log10(all_sample_meta$go_divProg_median_counts), all_sample_meta$dividing_cons_coexp_metric, main = 'Dividing prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+
+plot(log10(all_sample_meta$go_glut_median_counts), all_sample_meta$glut_cons_coexp_metric, main = 'Glutamatergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+
+plot(log10(all_sample_meta$go_gaba_median_counts), all_sample_meta$gaba_cons_coexp_metric, main = 'GABAergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+
+plot(log10(all_sample_meta$go_nonN_median_counts), all_sample_meta$nonN_cons_coexp_metric, main = 'Non-neuronal', 
+     xlab = 'log10( median marker set read count )', ylab = 'Conserved Coexpression score', ylim = c(.4, 1))
+
+
+#EGAD auroc, co-expression module scores
+plot(log10(all_sample_meta$go_nProg_median_counts), all_sample_meta$egad_auc_nProg_markers, main = 'Neural prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(log10(all_sample_meta$go_intProg_median_counts), all_sample_meta$egad_auc_intProg_markers, main = 'Intermediate prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(log10(all_sample_meta$go_divProg_median_counts), all_sample_meta$egad_auc_divProg_markers, main = 'Dividing prog.', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(log10(all_sample_meta$go_glut_median_counts), all_sample_meta$egad_auc_glut_markers, main = 'Glutamatergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(log10(all_sample_meta$go_gaba_median_counts), all_sample_meta$egad_auc_gaba_markers, main = 'GABAergic', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+plot(log10(all_sample_meta$go_nonN_median_counts), all_sample_meta$egad_auc_nonN_markers, main = 'Non-neuronal', 
+     xlab = 'log10( median marker set read count )', ylab = 'EGAD auroc', ylim = c(.3, 1))
+
+
+```
+
+
+
+## Supp. Figure 10 A
+
+```{r stress_gene_FC}
+#Contain the organoid_stress_df, fetal_stress_df, comb_stress_exp_df dataframes
+load(file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/stress_gene_exp_v2.Rdata')
+
+#Make the expression matrices
+fetal_stress_gene_exp_mat = reshape2::acast(fetal_stress_df[ ,1:3], Var1 ~ Var2 )
+org_stress_gene_exp_mat = reshape2::acast(organoid_stress_df[ ,1:3], Var1 ~ Var2 )
+
+
+#exclude the genes missing in several datasets
+#There's one dataset who is missing a lot of genes, group of 4 datasets
+org_keep_genes = names(which(rowSums(is.na(org_stress_gene_exp_mat)) <= 4))
+fetal_keep_genes = names(which(rowSums(is.na(fetal_stress_gene_exp_mat)) <= 4))
+
+keep_genes = intersect(org_keep_genes, fetal_keep_genes)
+
+#Only consider the datasets with CPM
+org_dataset_index = all_sample_meta$Normalization.for.this.study == 'CPM'
+#Only zhou_lu dataset was not CPM
+fetal_dataset_index = colnames(fetal_stress_gene_exp_mat) != 'zhou_lu'
+
+org_stress_means = rowMeans(org_stress_gene_exp_mat[rownames(org_stress_gene_exp_mat) %in% keep_genes, org_dataset_index ], na.rm = T)
+fetal_stress_means = rowMeans(fetal_stress_gene_exp_mat[rownames(fetal_stress_gene_exp_mat) %in% keep_genes, fetal_dataset_index ], na.rm = T)
+table(names(org_stress_means) == names(fetal_stress_means))
+
+
+FC_stress = log2(org_stress_means/fetal_stress_means)
+FC_stress = FC_stress[order(FC_stress)]
+
+organoid_stress_df$data_type = rep('Organoid', length = nrow(organoid_stress_df))
+fetal_stress_df$data_type = rep('Primary tissue', length = nrow(fetal_stress_df))
+
+comb_stress_exp_df = rbind(organoid_stress_df, fetal_stress_df)
+comb_stress_exp_df = comb_stress_exp_df %>% filter(Var1 %in% keep_genes)
+comb_stress_exp_df$Var1 = factor(comb_stress_exp_df$Var1, levels = c(names(FC_stress)))
+
+
+#gene_order = comb_stress_exp_df %>% filter(Var2 == 'uzquiano_1') %>% pull(Var1)
+
+#Filter out the nonCPM datasets
+org_cpm = all_sample_meta$sample_ids[all_sample_meta$Normalization.for.this.study == 'CPM']
+fetal_cpm = colnames(fetal_stress_gene_exp_mat)
+fetal_cpm = fetal_cpm[fetal_cpm != 'zhou_lu']
+cpm_datasets = c(org_cpm, fetal_cpm)
+comb_stress_exp_df = comb_stress_exp_df %>% filter(Var2 %in% cpm_datasets)
+
+
+fc_gene_df = comb_stress_exp_df %>% group_by(Var1) %>% summarize(mean_exp = mean(value))
+index = match(names(FC_stress), fc_gene_df$Var1)
+fc_gene_df = fc_gene_df[index, ]
+fc_gene_df$log2FC = FC_stress
+
+up_prim_genes = as.character(fc_gene_df %>% filter(mean_exp >= 50 & log2FC <= -.25) %>% pull(Var1))
+up_org_genes = as.character(fc_gene_df %>% filter(mean_exp >= 50 & log2FC >= .25) %>% pull(Var1))
+
+
+hist(FC_stress, xlab = 'log2( Mean organoid expression / Mean Primary tissue expression )', 
+     main = 'log2(FC) of stress-related genes', breaks = seq(-1, 2.5, .1))
+abline(v = 0, col = 'red', lty = 'dashed', lwd = 2)
+
+
+temp = comb_stress_exp_df %>% group_by(Var1) %>% summarise(zscore_exp = scale(value), Var2 = Var2, data_type = data_type)
+
+ggplot(temp %>% filter(Var1 %in% up_prim_genes), aes(x = Var1, y = zscore_exp, fill = data_type)) + geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(guide = guide_axis(n.dodge=3)) + ggtitle('log2(FC) <= -0.25 : Increased expression in primary tissue') + ylab('z-score( CPM )')
+
+ggplot(temp %>% filter(Var1 %in% up_org_genes), aes(x = Var1, y = zscore_exp, fill = data_type)) + geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(guide = guide_axis(n.dodge=3)) + ggtitle('log2(FC) >= 0.25 : Increased expression in organoids') + ylab('z-score( CPM )')
+
+```
+
+
+## Supp. Figure 10 B and C
+
+```{r stress_gene_exp_and_coexp_scores}
+
+
+stress_gene_df = read.csv("/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/stress_gene_df_v2.csv")
+glycolysis_genes  = stress_gene_df %>% filter(module == 'GO:0061621 - canonical glycolysis') %>% pull(gene)
+er_stress_genes  = stress_gene_df %>% filter(module == 'organoid_human_ER_stress_module') %>% pull(gene)
+oxidative_stress_genes  = stress_gene_df %>% filter(module == 'organoid_human_oxidative_stress_module') %>% pull(gene)
+
+dataset_index = all_sample_meta$Normalization.for.this.study == 'CPM'
+
+#Glycolysis stress expression
+mean_glycolysis_org_exp = organoid_stress_df %>% filter(Var1 %in% glycolysis_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+
+par(pty = 's')
+corr_value = cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main = sprintf('Glycolysis stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Glycolysis genes', ylab = 'Global preserved co-expression score')
+
+#ER stress expression
+mean_er_org_exp = organoid_stress_df %>% filter(Var1 %in% er_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+
+par(pty = 's')
+corr_value = cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main =  sprintf('ER stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of ER stress genes', ylab = 'Global preserved co-expression score')
+
+#Oxidative stress expression
+mean_oxy_org_exp = organoid_stress_df %>% filter(Var1 %in% oxidative_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+
+par(pty = 's')
+corr_value = cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], method = 'spearman', use = 'complete.obs')
+plot(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$genome_cons_coexp_score[dataset_index], main =  sprintf('Oxidative stress, corr: %0.3f', corr_value), 
+     xlab = 'Mean expression of Oxidative stress genes', ylab = 'Global preserved co-expression score')
+
+
+
+gly_cors = c(cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_glycolysis_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'))
+er_cors = c(cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_er_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'))
+oxy_cors = c(cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$dividing_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$nProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$intProg_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$glut_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$gaba_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'),
+             cor(mean_oxy_org_exp$mean_exp[dataset_index], all_sample_meta$nonN_cons_coexp_metric[dataset_index], method = 'spearman', use = 'complete.obs'))
+
+stress_corrs_df = data.frame(glycolysis_corrs = gly_cors, oxidative_stress_corrs = oxy_cors, ER_stress_corrs = er_cors)
+row.names(stress_corrs_df) = c('Dividing prog.','Neural prog.','Intermediate prog.','Glutamatergic','GABAergic','Non-neuronal')
+
+col_fun = colorRamp2(c( -.4, 0, .4), c('blue',"white", "red"))
+Heatmap(stress_corrs_df, name = 'spearman', col = col_fun, cluster_rows = F, cluster_columns = F )
+
+
+```
+
+
+## Supp. Figure 10 D and E
+
+```{r org_stress_over_protocols}
+
+temp_df = data.frame(protocol = all_sample_meta$Protocol.classification, global_presCoexp = all_sample_meta$genome_cons_coexp_score, 
+                     rna_norm = all_sample_meta$Normalization.for.this.study,
+                     glycolysis_exp =mean_glycolysis_org_exp$mean_exp,
+                     er_stress_exp = mean_er_org_exp$mean_exp,
+                     oxidative_stress_exp = mean_oxy_org_exp$mean_exp)
+
+temp_df = temp_df %>% filter(rna_norm == 'CPM')
+
+##Add the fetal data too 
+mean_glycolysis_fetal_exp = fetal_stress_df %>% filter(Var1 %in% glycolysis_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+mean_er_fetal_exp = fetal_stress_df %>% filter(Var1 %in% er_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+mean_oxy_fetal_exp = fetal_stress_df %>% filter(Var1 %in% oxidative_stress_genes) %>% group_by(Var2) %>% summarize(mean_exp = mean(value, na.rm = T))
+
+temp_fetal_df = data.frame(protocol = mean_oxy_fetal_exp %>% pull(Var2), global_presCoexp = NA, rna_norm = NA, 
+                           glycolysis_exp =mean_glycolysis_fetal_exp$mean_exp,
+                           er_stress_exp = mean_er_fetal_exp$mean_exp,
+                           oxidative_stress_exp =mean_oxy_fetal_exp$mean_exp )
+temp_fetal_df = temp_fetal_df %>% filter(protocol != 'zhou_lu')
+temp_fetal_df$protocol = rep('Primary tissue', length = nrow(temp_fetal_df))
+
+
+temp_df = rbind(temp_df, temp_fetal_df)
+
+stress_colors = c('Primary tissue' = 'grey', 'directed hypothalamic arcuate' = 'red', 'iPSC-microglia' = 'red',
+                  'vascular organoid' = 'red','undirected' = 'red','directed cortical' = 'red',
+                  'directed cerebellum' = 'red','directed dorsal forebrain' = 'red','directed MGE' = 'red', 
+                  'undirected neuro-vascular' = 'red','directed ventral midbrain' = 'red','directed thalamic' = 'red','directed brainstem' = 'red')
+
+
+data_order = temp_df %>% group_by(protocol) %>% summarise(median_exp = median(glycolysis_exp)) %>% arrange(median_exp) %>% pull(protocol)
+temp_df$protocol = factor(temp_df$protocol, levels = c(data_order))
+ggplot(temp_df, aes(x = protocol, y = glycolysis_exp, fill = protocol)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = stress_colors) + guides(fill = 'none') + ylab('Mean expression of Glycolysis genes')
+
+data_order = temp_df %>% group_by(protocol) %>% summarise(median_exp = median(er_stress_exp)) %>% arrange(median_exp) %>% pull(protocol)
+temp_df$protocol = factor(temp_df$protocol, levels = c(data_order))
+ggplot(temp_df, aes(x = protocol, y = er_stress_exp, fill = protocol)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = stress_colors) + guides(fill = 'none') + ylab('Mean expression of ER-stress genes')
+
+
+data_order = temp_df %>% group_by(protocol) %>% summarise(median_exp = median(oxidative_stress_exp)) %>% arrange(median_exp) %>% pull(protocol)
+temp_df$protocol = factor(temp_df$protocol, levels = c(data_order))
+ggplot(temp_df, aes(x = protocol, y = oxidative_stress_exp, fill = protocol)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_manual(values = stress_colors) + guides(fill = 'none') + ylab('Mean expression of Oxidative stress genes')
+
+
+stress_exp_corrs = cor(temp_df[ ,c('glycolysis_exp','er_stress_exp','oxidative_stress_exp')], method = 'spearman')
+
+col_fun = colorRamp2(c( 0, 1), c("white", "red"))
+Heatmap(stress_exp_corrs, name = 'spearman',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', col = col_fun )
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
