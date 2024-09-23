@@ -1,0 +1,1622 @@
+
+Generating organoid co-expression networks
+
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = '/home/werner/projects/meta_qc_organoid/code')
+```
+
+```{r}
+
+library(Seurat)
+library(reticulate)
+library(knitr)
+library(matrixStats)
+library(data.table)
+library(ggplot2)
+library(MetaMarkers)
+library(dplyr)
+library(MetBrewer)
+library(ComplexHeatmap)
+library(circlize)
+
+Sys.setenv(RETICULATE_PYTHON = "/usr/bin/python3.6")
+library(reticulate)
+np <- reticulate::import("numpy")
+
+```
+
+
+
+```{r}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+```
+
+
+Fetal markers
+```{r}
+
+test_markers = list(
+    fan_fu = read_markers("6_26_24_annot_metaMarkers/fan_fu_fetal_class_markers.csv.gz"), 
+    poliodakis_1 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch1_fetal_class_markers.csv.gz"),
+    poliodakis_2 = read_markers("6_26_24_annot_metaMarkers/poliodakis_batch2_fetal_class_markers.csv.gz"),
+    GW14 = read_markers("6_26_24_annot_metaMarkers/areal_GW14_fetal_class_markers.csv.gz"),
+    GW18_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW18_2_fetal_class_markers.csv.gz"),
+    GW19 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_fetal_class_markers.csv.gz"),
+    GW19_2 = read_markers("6_26_24_annot_metaMarkers/areal_GW19_2_fetal_class_markers.csv.gz"),
+    GW20 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_fetal_class_markers.csv.gz"),
+    GW20_31 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_31_fetal_class_markers.csv.gz"),
+    GW20_34 = read_markers("6_26_24_annot_metaMarkers/areal_GW20_34_fetal_class_markers.csv.gz"),
+    GW25 = read_markers("6_26_24_annot_metaMarkers/areal_GW25_fetal_class_markers.csv.gz"),
+    linnarsson_GW5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW5_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW5-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_6_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_6_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-6_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-7_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_3_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW6_point_9_4 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW6-9_4_fetal_class_markers_v4.csv.gz"), 
+    linnarsson_GW7 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW7_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW7-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_3 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8_3_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_5_1 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_1_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW8_point_5_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW8-5_2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW9_point_2 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-2_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW9_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW9-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW10 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW10_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW11_point_5 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW11-5_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW12 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW12_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW13 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW13_fetal_class_markers_v4.csv.gz"),
+    linnarsson_GW14 = read_markers("6_26_24_linnarsson_metaMarkers/linnarsson_GW14_fetal_class_markers_v4.csv.gz")
+    )
+
+fetal_meta_markers = make_meta_markers(test_markers, detailed_stats = TRUE)
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+
+#save metamarkers for later
+export_meta_markers(fetal_meta_markers, "../data/metamarkers/fetal_meta_markers_v2.csv", names(test_markers))
+test_meta_markers = read_meta_markers("../data/metamarkers/fetal_meta_markers_v2.csv.gz")
+test_meta_markers
+```
+
+
+
+```{r}
+fetal_meta_markers = read_meta_markers("../../../data/metamarkers/fetal_meta_markers_v2.csv.gz")
+fetal_meta_markers
+
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+dim(intProg_markers)
+dim(nProg_markers)
+dim(divProg_markers)
+dim(nonN_markers)
+dim(gaba_markers)
+dim(glut_markers)
+dim(micro_markers)
+```
+
+
+
+
+organoid dataset metadata
+```{r}
+
+all_sample_meta = read.csv('../data/seurat_objs/revised_all_data_just_meta_v2.csv')
+dim(all_sample_meta)
+
+all_sample_meta
+
+sum(as.numeric(all_sample_meta$pre_qc_cell_number))
+sum(as.numeric(all_sample_meta$post_qc_cell_number))
+```
+
+
+Now filter the networks to just include the go genes, same gene universe across all datasets/coexpression networks
+
+```{r}
+library(org.Hs.eg.db)
+library(EGAD)
+library(AnnotationDbi)
+
+#GO database from GOSOURCEDATE: 2023-01-01, it's tied to the version of R. current version of R is 4.3.1
+org.Hs.eg.db #running this will print out the GO database version information
+go_table <- as.data.frame(org.Hs.egGO2ALLEGS) #gene mapping to the direct GO term and that term's children
+go_table$gene_symbol = mapIds(org.Hs.eg.db, go_table$gene_id, "SYMBOL","ENTREZID") #Add gene symbol 
+annotations <- make_annotations(go_table[,c("gene_symbol", "go_id")], unique(go_table$gene_symbol), unique(go_table$go_id))
+dim(annotations)
+
+go_genes = unique(go_table$gene_symbol)
+length(go_genes)
+go_terms = unique(go_table$go_id)
+length(go_terms)
+
+#Save all current GO annotations
+save(go_table, annotations, go_genes, go_terms, file = '../data/go_annotations/go_annotations.Rdata')
+
+```
+
+```{r}
+#library(org.Hs.eg.db)
+library(EGAD)
+#library(AnnotationDbi)
+load('../data/go_annotations/go_annotations.Rdata')
+```
+
+
+```{r}
+source_python('python_coexpression.py')
+```
+
+```{r}
+for(i in 1:nrow(all_sample_meta)){
+ 
+  start = Sys.time()
+  x = load(all_sample_meta$processed_seurat_path[[i]])
+  current_dataset = get(x)
+  suppressWarnings(rm(seurat_object, x, dataset))
+  gc()
+  
+  dataset_genes = rownames(current_dataset)
+  #Filter for the GO gene universe
+  dataset_genes_in_go = dataset_genes[dataset_genes %in% go_genes]
+  dataset_genes_missing_from_go = go_genes[! go_genes %in% dataset_genes]
+  #Subset the gene expression for the genes present in GO
+  dataset_gene_index = dataset_genes %in% dataset_genes_in_go
+  exp_data = as.matrix(current_dataset@assays$RNA@data[dataset_gene_index, ])
+  #Add zero counts for the missing GO genes
+  go_missing = matrix(0, nrow = length(dataset_genes_missing_from_go), ncol = ncol(exp_data), 
+                      dimnames = list(dataset_genes_missing_from_go, colnames(exp_data)))
+  exp_data = rbind(exp_data, go_missing)
+  r_genes = rownames(exp_data)
+
+  #Get coexpression data
+  test_py_exp = np$array(exp_data) #Turn R matrix into numpy array
+  python_script_test = get_coexpression(test_py_exp, r_genes) #Python method for spearman correlations, coexpression
+  corr_matrix = as.matrix(python_script_test) #Turn to matrix
+  #Convert Nans to 0, these are genes with 0 expression in any cells
+  corr_matrix[!is.finite(corr_matrix)] = 0
+  
+  file_name = sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/%s_coexp.Rdata', all_sample_meta$sample_ids[i])
+  save(corr_matrix, file = file_name)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done getting coexpression from %i dataset...', i))
+  
+  #Rank the coexpression data
+  #Rank everything, I want the minimum rank to be 1, so ties are minimum. Subtracting 1 sets the minimum rank to 0
+  rank_corr = frank(c(corr_matrix), ties.method = 'min') - 1
+  #Divide by max rank squeezes everything between 0 and 1
+  norm_rank_corr = rank_corr / max(rank_corr)
+  #Put back into a matrix
+  rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(corr_matrix), ncol = ncol(corr_matrix), 
+                            dimnames = list(rownames(corr_matrix), colnames(corr_matrix)))
+  diag(rank_corr_matrix) = 1
+  
+  file_name = sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[i])
+  save(rank_corr_matrix, file =file_name)
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done ranking coexpression from %i dataset...', i))  
+  
+  rm(current_dataset)
+  gc()
+  
+}
+```
+
+
+
+
+
+```{r}
+
+#Get colors
+class_palette = met.brewer("Archambault", 20)
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'Fetal Microglia/Immune marker' = class_palette[18],
+                         'non-marker' = 'white')
+  
+```
+
+
+
+
+
+```{r}
+
+go_nProg = filter(nProg_markers, gene %in% go_genes )$gene
+length(go_nProg)
+go_divProg = filter(divProg_markers, gene %in% go_genes )$gene
+length(go_divProg)
+go_intProg = filter(intProg_markers, gene %in% go_genes )$gene
+length(go_intProg)
+go_gaba = filter(gaba_markers, gene %in% go_genes )$gene
+length(go_gaba)
+go_glut = filter(glut_markers, gene %in% go_genes )$gene
+length(go_glut)
+go_nonN = filter(nonN_markers, gene %in% go_genes )$gene
+length(go_nonN)
+go_micro = filter(micro_markers, gene %in% go_genes )$gene
+length(go_micro)
+
+```
+
+
+
+
+```{r}
+
+#Get colors
+class_palette = met.brewer("Archambault", 20)
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'Fetal Microglia/Immune marker' = class_palette[18],
+                         'non-marker' = 'white')
+  
+```
+
+
+
+
+```{r}
+coexp_file = sprintf('../data/coexpression/organoid/2_15_24_GO_coexp/%s_coexp.Rdata',all_sample_meta$sample_ids[110])
+
+load(coexp_file)
+
+all_marker_genes = c(gaba_markers$gene, glut_markers$gene, nProg_markers$gene, nonN_markers$gene, intProg_markers$gene, divProg_markers$gene)
+
+corr_matrix = corr_matrix[rownames(corr_matrix) %in% all_marker_genes, colnames(corr_matrix) %in% all_marker_genes ]
+dim(corr_matrix)
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(corr_matrix))
+fetal_marker_annot_vec[rownames(corr_matrix) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+fetal_marker_annot_vec[rownames(corr_matrix) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(corr_matrix) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(corr_matrix) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(corr_matrix) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(corr_matrix) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+
+top_ha = HeatmapAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+row_ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette), show_legend = F)
+
+Sys.time()
+col_fun = colorRamp2(c(-1, 0, 1), c("blue", "white", "red"))
+h_map = Heatmap(corr_matrix, show_row_names = F, show_column_names = F, col = col_fun, name = 'spearman', column_title = 'organoid_coexpression',
+        clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', 
+        top_annotation = top_ha, left_annotation = row_ha, show_row_dend = F, show_column_dend = T)
+draw(h_map)
+
+Sys.time()
+
+
+
+```
+
+
+
+
+```{r}
+nrow(all_sample_meta)
+
+```
+
+
+
+
+Run Egad on each individual coexp network
+
+
+```{r}
+all_dataset_egad = vector(mode = 'list', length =nrow(all_sample_meta))
+names(all_dataset_egad) = all_sample_meta$sample_ids[1:nrow(all_sample_meta)]
+
+for(i in 1: nrow(all_sample_meta)){
+
+  start = Sys.time()
+  #Clear loose memory
+  gc()
+  
+  #Load coexpression network
+  coexp_file = sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata',all_sample_meta$sample_ids[i])
+  load(coexp_file)
+  current_dataset = all_sample_meta$sample_ids[i]
+  
+  #Get all genes in the coexpression matrix
+  genelist <- rownames(rank_corr_matrix)
+
+  #Get marker annotations
+  annot_vec = c(as.numeric(genelist %in% gaba_markers$gene), as.numeric(genelist %in% glut_markers$gene),
+                as.numeric(genelist %in% nonN_markers$gene),as.numeric(genelist %in% nProg_markers$gene),
+                as.numeric(genelist %in% intProg_markers$gene),as.numeric(genelist %in% divProg_markers$gene),
+                as.numeric(genelist %in% micro_markers$gene))
+  marker_annotations = matrix(annot_vec, nrow = length(genelist), ncol = 7, byrow = F, 
+                              dimnames = list(genelist, c('gaba_markers','glut_markers','nonN_markers','nProg_markers', 'intProg_markers', 
+                                                          'divProg_markers', 'micro_markers')))
+  
+  # Run GBA 
+  GO_groups_voted <- run_GBA(rank_corr_matrix, annotations, nfold = 3)
+  #EGAD for the class marker genes
+  marker_groups_voted <- run_GBA(rank_corr_matrix, marker_annotations, nfold = 3)
+  
+  #Get AUCs of all GO groups
+  # neighbor voting AUROCs
+  auc_GO_nv = GO_groups_voted[[1]][,1]
+  # node degree AUCs
+  auc_GO_nd = GO_groups_voted[[1]][,3]
+  
+  #Get AUCs of the marker groups
+  # neighbor voting AUROCs
+  auc_marker_nv = marker_groups_voted[[1]][,1]
+  # node degree AUCs
+  auc_marker_nd = marker_groups_voted[[1]][,3]
+  
+  #Get NA matrix for all the missing goterms for this dataset
+  missing_go = go_terms[!go_terms %in% rownames(GO_groups_voted[[1]])]
+  
+  missing_matrix = matrix(data = NA, nrow = length(missing_go), ncol = 3, 
+                          dimnames = list(missing_go, colnames(GO_groups_voted[[1]])))
+  #Add and reorder so everything is consistent across datasets
+  all_goterms = rbind(GO_groups_voted[[1]], missing_matrix)
+  all_goterms  = all_goterms[match(go_terms, rownames(all_goterms)), ]
+  
+  #Add the marker results
+  egad_results = rbind(all_goterms, marker_groups_voted[[1]])
+  #colnames(egad_results) = paste(current_dataset,colnames(egad_results), sep = '_')
+  
+  #Add a column with the dataset name
+  egad_results = cbind(egad_results, dataset = current_dataset)
+  all_dataset_egad[[i]] = egad_results
+  
+  end = Sys.time()
+  print(end - start)
+  print(sprintf('Done with %i datasets...', i))
+  
+}
+```
+
+
+```{r}
+
+test = do.call(rbind, all_dataset_egad)
+test = as.data.frame(test)
+test$goterms = rep(c(as.character(go_terms), 'gaba_markers','glut_markers','nonN_markers','nProg_markers','intProg_markers',
+                     'divProg_markers', 'micro_markers'), length(all_dataset_egad))
+test = reshape2::melt(test, id = c('goterms', 'dataset'))
+test$value = as.numeric(test$value)
+table(test$dataset)
+test
+```
+
+
+Results on the ranked networks with just the go_genes
+```{r}
+organoid_egad_results = test
+
+save(organoid_egad_results, 
+     file = '../data/coexpression/organoid/organoid_egad_results_ranked_6_26_24.Rdata')
+```
+
+
+load in the fetal egad performance as well, the unannotated fetal datasets too
+
+```{r}
+
+load('../data/coexpression/organoid/organoid_egad_results_ranked_6_26_24.Rdata')
+load('../data/coexpression/fetal/fetal_egad_results_ranked_6_26_24.Rdata')
+load('../data/coexpression/fetal/unannot_fetal_egad_results_ranked_6_26_24.Rdata')
+```
+
+
+
+
+get average performance across the goterms for the datasets
+
+```{r}
+#Grab all the fetal results
+#all_fetal_egad_results = rbind(fetal_egad_results, unannot_fetal_egad_results)
+
+
+avg_go_auc_organoids = filter(organoid_egad_results, !grepl('markers', goterms) & variable == 'auc') %>% group_by(dataset) %>% summarise(value = mean(value, na.rm = T))
+avg_go_auc_organoids$goterms = rep('avg_goterm_auc',  nrow(avg_go_auc_organoids))
+avg_go_auc_organoids$sample_label = rep('organoid',  nrow(avg_go_auc_organoids))
+
+avg_go_auc_fetal = filter(fetal_egad_results, !grepl('markers', goterms) & variable == 'auc') %>% group_by(dataset) %>% summarise(value = mean(value, na.rm = T))
+avg_go_auc_fetal$goterms = rep('avg_goterm_auc',  nrow(avg_go_auc_fetal))
+avg_go_auc_fetal$sample_label = rep('fetal',  nrow(avg_go_auc_fetal))
+
+avg_go_auc_unannot_fetal = filter(unannot_fetal_egad_results, !grepl('markers', goterms) & variable == 'auc') %>% group_by(dataset) %>% summarise(value = mean(value, na.rm = T))
+avg_go_auc_unannot_fetal$goterms = rep('avg_goterm_auc',  nrow(avg_go_auc_unannot_fetal))
+avg_go_auc_unannot_fetal$sample_label = rep('unannot_fetal',  nrow(avg_go_auc_unannot_fetal))
+
+avg_go_all_datasets = rbind(avg_go_auc_organoids, avg_go_auc_fetal, avg_go_auc_unannot_fetal)
+avg_go_all_datasets$goterms = factor(avg_go_all_datasets$goterms, levels = c('avg_goterm_auc','intProg_markers','gaba_markers',
+                                                                                     'glut_markers','nProg_markers','divProg_markers', 'nonN_markers'))
+avg_go_all_datasets
+
+#All the marker set scores per dataset
+marker_set_organoid_egad_scores = filter(organoid_egad_results, grepl('markers', goterms) & variable == 'auc' & goterms != 'micro_markers')
+marker_set_organoid_egad_scores$sample_label = rep('organoid', nrow(marker_set_organoid_egad_scores))
+
+marker_set_fetal_egad_scores = filter(fetal_egad_results, grepl('markers', goterms) & variable == 'auc'& goterms != 'micro_markers')
+marker_set_fetal_egad_scores$sample_label = rep('fetal', nrow(marker_set_fetal_egad_scores))
+
+marker_set_unannot_fetal_egad_scores = filter(unannot_fetal_egad_results, grepl('markers', goterms) & variable == 'auc'& goterms != 'micro_markers')
+marker_set_unannot_fetal_egad_scores$sample_label = rep('unannot_fetal', nrow(marker_set_unannot_fetal_egad_scores))
+
+marker_set_all_datasets = rbind(marker_set_organoid_egad_scores, marker_set_fetal_egad_scores, marker_set_unannot_fetal_egad_scores)
+marker_set_all_datasets$goterms = factor(marker_set_all_datasets$goterms, levels = c('avg_goterm_auc','intProg_markers','gaba_markers',
+                                                                                     'glut_markers','nProg_markers','divProg_markers', 'nonN_markers'))
+#Drop the variable column
+marker_set_all_datasets = marker_set_all_datasets %>% mutate(variable = NULL)
+
+#Merge the two to plot
+comb_df = rbind(avg_go_all_datasets,marker_set_all_datasets)
+comb_df
+
+comb_df$sample_label = factor(comb_df$sample_label, levels = c('fetal','unannot_fetal','organoid'))
+
+```
+
+```{r}
+egad_marker_palette = c(
+                        'avg_goterm_auc' = 'grey50',
+                        'intProg_markers' = class_palette[16],
+                        'gaba_markers' = class_palette[1], 
+                        'nonN_markers' = class_palette[20],
+                        'glut_markers' = class_palette[14],
+                        'nProg_markers' = class_palette[4],
+                        'divProg_markers' = class_palette[10])
+
+sample_palette = c('fetal'='black', 'unannot_fetal'='grey', 'organoid'='white')
+alpha_values= c('organoid'=.75, 'fetal'=1, 'unannot_fetal'=1)
+
+ggplot(comb_df, aes(x = goterms, y = value, fill = goterms, color = sample_label, alpha = sample_label )) + geom_boxplot() +
+  geom_hline(yintercept = .5, linetype = 'dashed', color = 'red') +
+  ylim(.4 ,1) + 
+  scale_fill_manual(values = egad_marker_palette) + scale_color_manual(values = sample_palette) + scale_alpha_manual(values = alpha_values, guide = 'none')
+
+```
+
+
+
+
+
+
+Mean EGAD AUC across the marker sets
+
+```{r}
+marker_set_all_datasets
+marker_set_all_datasets %>% group_by(dataset) %>% summarize(mean_coexp = mean(value)) %>% arrange(desc(mean_coexp))
+
+```
+
+
+
+
+
+
+
+compare the class type EGAD performance to the dataset metadata, expecting the GABA directed protocols to be top pperforming GABA datasets
+
+```{r}
+
+org_marker_perf = organoid_egad_results[grepl('marker', organoid_egad_results$goterms) & organoid_egad_results$variable == 'auc', ]
+org_marker_perf
+
+dataset_author_proto = unique(all_sample_meta$Author.described.protocol)
+dataset_type = vector(mode = 'character', length = nrow(org_marker_perf))
+
+for(protocol in dataset_author_proto){
+  index = org_marker_perf$dataset %in% all_sample_meta$sample_ids[all_sample_meta$Author.described.protocol == protocol]
+  dataset_type[index] = protocol
+}
+org_marker_perf$dataset_author_proto = dataset_type
+
+
+dataset_grouped_proto = unique(all_sample_meta$Protocol.classification)
+dataset_type = vector(mode = 'character', length = nrow(org_marker_perf))
+
+for(protocol in dataset_grouped_proto){
+  index = org_marker_perf$dataset %in% all_sample_meta$sample_ids[all_sample_meta$Protocol.classification == protocol]
+  dataset_type[index] = protocol
+}
+
+org_marker_perf$dataset_grouped_proto = dataset_type
+org_marker_perf
+
+```
+order on the median gaba score
+```{r}
+
+org_marker_perf$goterms[org_marker_perf$goterms == 'intProg_markers'] = 'Fetal Intermediate Progenitor markers'
+org_marker_perf$goterms[org_marker_perf$goterms == 'gaba_markers'] = 'Fetal GABAergic markers'
+org_marker_perf$goterms[org_marker_perf$goterms == 'glut_markers'] = 'Fetal Glutamatergic markers'
+org_marker_perf$goterms[org_marker_perf$goterms == 'nonN_markers'] = 'Fetal Non-neuronal markers'
+org_marker_perf$goterms[org_marker_perf$goterms == 'nProg_markers'] = 'Fetal Neural Progenitor markers'
+org_marker_perf$goterms[org_marker_perf$goterms == 'divProg_markers'] = 'Fetal Dividing Progenitor markers'
+org_marker_perf$goterms[org_marker_perf$goterms == 'micro_markers'] = 'Fetal Microglia/Immune markers'
+
+org_marker_perf$goterms = factor(org_marker_perf$goterms, levels = c('Fetal Dividing Progenitor markers','Fetal Neural Progenitor markers','Fetal Intermediate Progenitor markers',
+                                                                     'Fetal GABAergic markers','Fetal Glutamatergic markers','Fetal Non-neuronal markers', 
+                                                                     'Fetal Microglia/Immune markers'))
+
+```
+
+```{r}
+
+
+org_egad_marker_palette = c('Fetal Non-neuronal markers' = class_palette[20], 'Fetal GABAergic markers' = class_palette[1], 
+                         'Fetal Glutamatergic markers' = class_palette[14], 
+                         'Fetal Neural Progenitor markers' = class_palette[4],
+                         'Fetal Intermediate Progenitor markers' = class_palette[16],
+                         'Fetal Dividing Progenitor markers' = class_palette[10],
+                         'Fetal Microglia/Immune markers' = class_palette[18])
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal GABAergic markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal GABAergic markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal GABAergic markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('GABAergic') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_gaba_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Glutamatergic markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Glutamatergic markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Glutamatergic markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Glutamatergic') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_glut_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Non-neuronal markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Non-neuronal markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Non-neuronal markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Non-neuronal') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_nonN_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Neural Progenitor markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Neural Progenitor markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Neural Progenitor markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Neural Progenitor') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_nProg_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Dividing Progenitor markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Dividing Progenitor markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Dividing Progenitor markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Dividing Progenitor') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_divProg_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Intermediate Progenitor markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Intermediate Progenitor markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Intermediate Progenitor markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Intermediate Progenitor') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_intProg_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Microglia/Immune markers') %>% group_by(dataset_author_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_author_proto = factor(org_marker_perf$dataset_author_proto, levels = order_df$dataset_author_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Microglia/Immune markers'), aes(x = dataset_author_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Microglia/Immune markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Microglia/Immune') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_micro_by_region_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+```
+
+
+
+
+
+
+
+And at the grouped protocol level
+
+```{r}
+
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal GABAergic markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal GABAergic markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal GABAergic markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('GABAergic') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_gaba_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Glutamatergic markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Glutamatergic markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Glutamatergic markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Glutamatergic') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_glut_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Non-neuronal markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Non-neuronal markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Non-neuronal markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Non-neuronal') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_nonN_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Neural Progenitor markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Neural Progenitor markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Neural Progenitor markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Neural Progenitor') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_nProg_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Dividing Progenitor markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Dividing Progenitor markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Dividing Progenitor markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Dividing Progenitor') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_divProg_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Intermediate Progenitor markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Intermediate Progenitor markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Intermediate Progenitor markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Intermediate Progenitor') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_intProg_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+
+order_df = org_marker_perf %>% filter(goterms == 'Fetal Microglia/Immune markers') %>% group_by(dataset_grouped_proto) %>% summarize(median = median(value)) %>% arrange(desc(median))
+org_marker_perf$dataset_grouped_proto = factor(org_marker_perf$dataset_grouped_proto, levels = order_df$dataset_grouped_proto)
+ggplot(filter(org_marker_perf, goterms == 'Fetal Microglia/Immune markers'), aes(x = dataset_grouped_proto, y = value)) + 
+  geom_boxplot(fill = org_egad_marker_palette['Fetal Microglia/Immune markers']) +
+  ylab('Organoid coexpression performance (AUC)') + xlab('Organoid protocol') + ggtitle('Microglia/Immune') + ylim(.3, 1) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5))
+ggsave(filename = 'organoid_egad_micro_by_grouped_proto_v5.pdf', path = 'graphs/coexpression/',
+       device = 'pdf', useDingbats = F,
+       height = 5, width = 6)
+
+```
+
+
+
+Can I find anything consistent in the poor performing datasets? What are the top coexpressed goterms? Different from fetal?
+Use the performance of the GLut markers to guage good/bad organoid datasets
+
+```{r}
+marker_set_all_datasets
+table(organoid_egad_results$variable)
+```
+
+
+
+```{r}
+table(all_sample_meta$sample_ids == filter(marker_set_all_datasets, sample_label=='organoid' & goterms == 'glut_markers')$dataset)
+all_sample_meta
+
+
+just_glut_auc = filter(marker_set_all_datasets, sample_label=='organoid' & goterms == 'glut_markers')$value
+just_gaba_auc = filter(marker_set_all_datasets, sample_label=='organoid' & goterms == 'gaba_markers')$value
+just_nonN_auc = filter(marker_set_all_datasets, sample_label=='organoid' & goterms == 'nonN_markers')$value
+just_nProg_auc = filter(marker_set_all_datasets, sample_label=='organoid' & goterms == 'nProg_markers')$value
+test_df = data.frame(dataset = all_sample_meta$sample_ids, sample_condition = all_sample_meta$Condition, sample_region = all_sample_meta$Author.described.protocol,
+                     glut_egad_auc =just_glut_auc, gaba_egad_auc =just_gaba_auc, nonN_egad_auc =just_nonN_auc, nProg_egad_auc =just_nProg_auc )
+
+test_df %>% arrange(desc(glut_egad_auc))
+
+
+```
+
+
+
+#####################################
+
+Aggregate the coexpression networks together
+#####################################
+
+
+Now when all the datasets have the same genes
+
+
+```{r}
+
+sum_rank_corr_genes = matrix(rep(0, length(go_genes)^2), nrow = length(go_genes), ncol = length(go_genes), dimnames = list(go_genes, go_genes))
+
+for(i in 1:nrow(all_sample_meta)){
+  gc()
+  x = load(sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata', all_sample_meta$sample_ids[i]))
+  rank_mat = get(x)
+  rm(x)
+  
+  #Reorder to match the same gene order
+  index = match(go_genes, rownames(rank_mat))
+  rank_mat = rank_mat[index, index]
+
+  sum_rank_corr_genes = sum_rank_corr_genes + rank_mat
+  print(i)
+}
+
+agg_rank_mat = sum_rank_corr_genes / nrow(all_sample_meta)
+#Set diagonal to 1
+diag(agg_rank_mat) = 1
+agg_rank_mat[1:10, 1:10]
+```
+
+
+
+
+Saving just go
+```{r}
+organoid_agg_rank_mat = agg_rank_mat
+save(organoid_agg_rank_mat, file = '../data/coexpression/organoid/agg_organoid_coexp_network_6_26_24.Rdata')
+```
+
+
+
+The aggregated network just using go genes
+
+```{r}
+load('../data/coexpression/organoid/agg_organoid_coexp_network_6_26_24.Rdata')
+dim(organoid_agg_rank_mat)
+
+load('../data/coexpression/fetal/agg_fetal_coexp_network_8_17_23.Rdata')
+dim(fetal_agg_rank_mat)
+
+load('../data/coexpression/fetal/agg_unannot_fetal_coexp_network_8_17_23.Rdata')
+dim(unannot_fetal_agg_rank_mat)
+
+```
+
+Ranking the network
+```{r}
+
+
+#Rank the coexpression data
+#Rank everything, I want the minimum rank to be 1, so ties are minimum. Subtracting 1 sets the minimum rank to 0
+rank_corr = frank(c(organoid_agg_rank_mat), ties.method = 'min') - 1
+#Divide by max rank squeezes everything between 0 and 1
+norm_rank_corr = rank_corr / max(rank_corr)
+#Put back into a matrix
+rank_corr_matrix = matrix(norm_rank_corr, nrow = nrow(organoid_agg_rank_mat), ncol = ncol(organoid_agg_rank_mat), 
+                          dimnames = list(rownames(organoid_agg_rank_mat), colnames(organoid_agg_rank_mat)))
+diag(rank_corr_matrix) = 1
+
+
+```
+
+Saving just go
+```{r}
+organoid_ranked_aggregate= rank_corr_matrix
+save(organoid_ranked_aggregate, file = '../data/coexpression/organoid/ranked_agg_organoid_coexp_network_6_26_24.Rdata')
+```
+
+
+
+
+
+
+```{r}
+load('../../../data/coexpression/organoid/ranked_agg_organoid_coexp_network_6_26_24.Rdata')
+dim(organoid_ranked_aggregate)
+
+load('../../../data/coexpression/fetal/ranked_agg_fetal_coexp_network_8_17_23.Rdata')
+dim(fetal_ranked_aggregate)
+
+load('../../../data/coexpression/fetal/ranked_agg_unannot_fetal_coexp_network_8_17_23.Rdata')
+dim(unannot_fetal_ranked_aggregate)
+
+```
+
+
+
+
+
+
+
+
+EGAD
+```{r}
+#Get all genes in the coexpression matrix
+genelist <- rownames(organoid_agg_rank_mat)
+
+#Get marker annotations
+annot_vec = c(as.numeric(genelist %in% gaba_markers$gene), as.numeric(genelist %in% glut_markers$gene),
+              as.numeric(genelist %in% nonN_markers$gene),as.numeric(genelist %in% nProg_markers$gene),
+              as.numeric(genelist %in% intProg_markers$gene) ,as.numeric(genelist %in% divProg_markers$gene),
+              as.numeric(genelist %in% micro_markers$gene)  )
+marker_annotations = matrix(annot_vec, nrow = length(genelist), ncol = 7, byrow = F, 
+                            dimnames = list(genelist, c('gaba_markers','glut_markers','nonN_markers','nProg_markers','intProg_markers','divProg_markers',
+                                                        'micro_markers')))
+
+# Run GBA 
+GO_groups_voted <- run_GBA(organoid_agg_rank_mat, annotations, nfold = 3)
+#EGAD for the class marker genes
+marker_groups_voted <- run_GBA(organoid_agg_rank_mat, marker_annotations, nfold = 3)
+
+#Get AUCs of all GO groups
+# neighbor voting AUROCs
+auc_GO_nv = GO_groups_voted[[1]][,1]
+# node degree AUCs
+auc_GO_nd = GO_groups_voted[[1]][,3]
+
+#Get AUCs of the marker groups
+# neighbor voting AUROCs
+auc_marker_nv = marker_groups_voted[[1]][,1]
+# node degree AUCs
+auc_marker_nd = marker_groups_voted[[1]][,3]
+
+#Get NA matrix for all the missing goterms for this dataset
+missing_go = go_terms[!go_terms %in% rownames(GO_groups_voted[[1]])]
+
+missing_matrix = matrix(data = NA, nrow = length(missing_go), ncol = 3, 
+                        dimnames = list(missing_go, colnames(GO_groups_voted[[1]])))
+#Add and reorder so everything is consistent across datasets
+all_goterms = rbind(GO_groups_voted[[1]], missing_matrix)
+all_goterms  = all_goterms[match(go_terms, rownames(all_goterms)), ]
+
+#Add the marker results
+egad_results = rbind(all_goterms, marker_groups_voted[[1]])
+
+organoid_agg_network_egad_results = egad_results
+
+```
+
+
+
+```{r}
+
+save(organoid_agg_network_egad_results, file = '../data/coexpression/organoid/agg_organoid_egad_results_6_26_24.Rdata')
+```
+
+
+
+
+On the ranked aggregated organoid networks
+```{r}
+#Get all genes in the coexpression matrix
+genelist <- rownames(organoid_ranked_aggregate)
+
+#Get marker annotations
+annot_vec = c(as.numeric(genelist %in% gaba_markers$gene), as.numeric(genelist %in% glut_markers$gene),
+              as.numeric(genelist %in% nonN_markers$gene),as.numeric(genelist %in% nProg_markers$gene),
+              as.numeric(genelist %in% intProg_markers$gene) ,as.numeric(genelist %in% divProg_markers$gene),
+              as.numeric(genelist %in% micro_markers$gene)  )
+marker_annotations = matrix(annot_vec, nrow = length(genelist), ncol = 7, byrow = F, 
+                            dimnames = list(genelist, c('gaba_markers','glut_markers','nonN_markers','nProg_markers','intProg_markers','divProg_markers',
+                                                        'micro_markers')))
+
+# Run GBA 
+GO_groups_voted <- run_GBA(organoid_ranked_aggregate, annotations, nfold = 3)
+#EGAD for the class marker genes
+marker_groups_voted <- run_GBA(organoid_ranked_aggregate, marker_annotations, nfold = 3)
+
+#Get AUCs of all GO groups
+# neighbor voting AUROCs
+auc_GO_nv = GO_groups_voted[[1]][,1]
+# node degree AUCs
+auc_GO_nd = GO_groups_voted[[1]][,3]
+
+#Get AUCs of the marker groups
+# neighbor voting AUROCs
+auc_marker_nv = marker_groups_voted[[1]][,1]
+# node degree AUCs
+auc_marker_nd = marker_groups_voted[[1]][,3]
+
+#Get NA matrix for all the missing goterms for this dataset
+missing_go = go_terms[!go_terms %in% rownames(GO_groups_voted[[1]])]
+
+missing_matrix = matrix(data = NA, nrow = length(missing_go), ncol = 3, 
+                        dimnames = list(missing_go, colnames(GO_groups_voted[[1]])))
+#Add and reorder so everything is consistent across datasets
+all_goterms = rbind(GO_groups_voted[[1]], missing_matrix)
+all_goterms  = all_goterms[match(go_terms, rownames(all_goterms)), ]
+
+#Add the marker results
+egad_results = rbind(all_goterms, marker_groups_voted[[1]])
+
+organoid_ranked_agg_network_egad_results = egad_results
+
+```
+
+
+
+```{r}
+organoid_ranked_agg_network_egad_results[22935:22941, ]
+save(organoid_ranked_agg_network_egad_results, file = '../data/coexpression/organoid/ranked_agg_organoid_egad_results_6_26_24.Rdata')
+```
+
+
+
+
+```{r}
+load('../../../data/coexpression/organoid/ranked_agg_organoid_egad_results_6_26_24.Rdata')
+dim(organoid_ranked_agg_network_egad_results)
+load('../../../data/coexpression/fetal/ranked_agg_fetal_egad_results_6_26_24.Rdata')
+dim(fetal_ranked_agg_network_egad_results)
+load('../../../data/coexpression/fetal/ranked_agg_unannot_fetal_egad_results_6_26_24.Rdata')
+dim(unannot_fetal_ranked_agg_network_egad_results)
+
+```
+
+
+
+
+```{r}
+
+organoid_agg_network_egad_results[22934:22941,'auc' ]
+fetal_agg_network_egad_results[22934:22941,'auc' ]
+unannot_fetal_agg_network_egad_results[22934:22941,'auc' ]
+
+
+hist(organoid_agg_network_egad_results[ ,'auc'], breaks = 64)
+hist(fetal_agg_network_egad_results[ ,'auc'], breaks = 64)
+hist(unannot_fetal_agg_network_egad_results[ ,'auc'], breaks = 64)
+
+
+mean(organoid_agg_network_egad_results[ 1:22934,'auc'], na.rm = T)
+mean(fetal_agg_network_egad_results[ 1:22934,'auc'], na.rm = T)
+mean(unannot_fetal_agg_network_egad_results[ 1:22934,'auc'], na.rm = T)
+```
+
+```{r}
+
+organoid_ranked_agg_network_egad_results[22934:22941,'auc' ]
+fetal_ranked_agg_network_egad_results[22934:22941,'auc' ]
+unannot_fetal_ranked_agg_network_egad_results[22934:22941,'auc' ]
+
+```
+
+
+save the trimmed down versions of the networks for vizualization
+
+```{r}
+all_marker_genes = c(divProg_markers$gene, nProg_markers$gene, intProg_markers$gene, glut_markers$gene, gaba_markers$gene, nonN_markers$gene)
+
+#Organoid network
+organoid_agg_marker = organoid_ranked_aggregate[rownames(organoid_ranked_aggregate) %in% all_marker_genes, colnames(organoid_ranked_aggregate) %in% all_marker_genes ]
+dim(organoid_agg_marker)
+
+
+#Unannotated fetal network
+unannot_fetal_agg_marker = unannot_fetal_ranked_aggregate[rownames(unannot_fetal_ranked_aggregate) %in% all_marker_genes, 
+                                                          colnames(unannot_fetal_ranked_aggregate) %in% all_marker_genes ]
+dim(unannot_fetal_agg_marker)
+
+
+save(organoid_agg_marker,unannot_fetal_agg_marker, 
+     file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/agg_marker_coexp_nets.Rdata' )
+
+```
+
+
+
+
+Order genes within each MetaMarker set by their intra-set co-expression
+
+```{r}
+
+all_marker_genes = c(divProg_markers$gene, nProg_markers$gene, intProg_markers$gene, glut_markers$gene, gaba_markers$gene, nonN_markers$gene)
+
+#Organoid network
+organoid_agg_marker = organoid_ranked_aggregate[rownames(organoid_ranked_aggregate) %in% all_marker_genes, colnames(organoid_ranked_aggregate) %in% all_marker_genes ]
+dim(organoid_agg_marker)
+
+#Reordering the genes by their average within marker set co-expression strength
+divProg_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% divProg_markers$gene, colnames(organoid_agg_marker) %in% divProg_markers$gene], na.rm = T)
+divProg_ord = names(divProg_means[order(divProg_means, decreasing = T)])
+nProg_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% nProg_markers$gene, colnames(organoid_agg_marker) %in% nProg_markers$gene], na.rm = T)
+nProg_ord = names(nProg_means[order(nProg_means, decreasing = T)])
+intProg_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% intProg_markers$gene, colnames(organoid_agg_marker) %in% intProg_markers$gene], na.rm = T)
+intProg_ord = names(intProg_means[order(intProg_means, decreasing = T)])
+glut_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% glut_markers$gene, colnames(organoid_agg_marker) %in% glut_markers$gene], na.rm = T)
+glut_ord = names(glut_means[order(glut_means, decreasing = T)])
+gaba_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% gaba_markers$gene, colnames(organoid_agg_marker) %in% gaba_markers$gene], na.rm = T)
+gaba_ord = names(gaba_means[order(gaba_means, decreasing = T)])
+nonN_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% nonN_markers$gene, colnames(organoid_agg_marker) %in% nonN_markers$gene], na.rm = T)
+nonN_ord = names(nonN_means[order(nonN_means, decreasing = T)])
+
+temp_all_marker_genes = c(divProg_ord, nProg_ord, intProg_ord, glut_ord, gaba_ord, nonN_ord)
+
+#Order the matrix to the marker gene order
+row_index = match(temp_all_marker_genes, rownames(organoid_agg_marker))
+col_index = match(temp_all_marker_genes, colnames(organoid_agg_marker))
+organoid_agg_marker = organoid_agg_marker[row_index, col_index]
+
+
+#Fetal network
+fetal_agg_marker = fetal_ranked_aggregate[rownames(fetal_ranked_aggregate) %in% all_marker_genes, colnames(fetal_ranked_aggregate) %in% all_marker_genes ]
+
+#Reordering the genes by their average within marker set co-expression strength
+divProg_means = colMeans(fetal_agg_marker[rownames(fetal_agg_marker) %in% divProg_markers$gene, colnames(fetal_agg_marker) %in% divProg_markers$gene], na.rm = T)
+divProg_ord = names(divProg_means[order(divProg_means, decreasing = T)])
+nProg_means = colMeans(fetal_agg_marker[rownames(fetal_agg_marker) %in% nProg_markers$gene, colnames(fetal_agg_marker) %in% nProg_markers$gene], na.rm = T)
+nProg_ord = names(nProg_means[order(nProg_means, decreasing = T)])
+intProg_means = colMeans(fetal_agg_marker[rownames(fetal_agg_marker) %in% intProg_markers$gene, colnames(fetal_agg_marker) %in% intProg_markers$gene], na.rm = T)
+intProg_ord = names(intProg_means[order(intProg_means, decreasing = T)])
+glut_means = colMeans(fetal_agg_marker[rownames(fetal_agg_marker) %in% glut_markers$gene, colnames(fetal_agg_marker) %in% glut_markers$gene], na.rm = T)
+glut_ord = names(glut_means[order(glut_means, decreasing = T)])
+gaba_means = colMeans(fetal_agg_marker[rownames(fetal_agg_marker) %in% gaba_markers$gene, colnames(fetal_agg_marker) %in% gaba_markers$gene], na.rm = T)
+gaba_ord = names(gaba_means[order(gaba_means, decreasing = T)])
+nonN_means = colMeans(fetal_agg_marker[rownames(fetal_agg_marker) %in% nonN_markers$gene, colnames(fetal_agg_marker) %in% nonN_markers$gene], na.rm = T)
+nonN_ord = names(nonN_means[order(nonN_means, decreasing = T)])
+
+temp_all_marker_genes = c(divProg_ord, nProg_ord, intProg_ord, glut_ord, gaba_ord, nonN_ord)
+
+#Order the matrix to the marker gene order
+row_index = match(temp_all_marker_genes, rownames(fetal_agg_marker))
+col_index = match(temp_all_marker_genes, colnames(fetal_agg_marker))
+fetal_agg_marker = fetal_agg_marker[row_index, col_index]
+
+
+
+#Unannotated fetal network
+unannot_fetal_agg_marker = unannot_fetal_ranked_aggregate[rownames(unannot_fetal_ranked_aggregate) %in% all_marker_genes, 
+                                                          colnames(unannot_fetal_ranked_aggregate) %in% all_marker_genes ]
+dim(unannot_fetal_agg_marker)
+
+#Reordering the genes by their average within marker set co-expression strength
+divProg_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% divProg_markers$gene, colnames(unannot_fetal_agg_marker) %in% divProg_markers$gene], na.rm = T)
+divProg_ord = names(divProg_means[order(divProg_means, decreasing = T)])
+nProg_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% nProg_markers$gene, colnames(unannot_fetal_agg_marker) %in% nProg_markers$gene], na.rm = T)
+nProg_ord = names(nProg_means[order(nProg_means, decreasing = T)])
+intProg_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% intProg_markers$gene, colnames(unannot_fetal_agg_marker) %in% intProg_markers$gene], na.rm = T)
+intProg_ord = names(intProg_means[order(intProg_means, decreasing = T)])
+glut_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% glut_markers$gene, colnames(unannot_fetal_agg_marker) %in% glut_markers$gene], na.rm = T)
+glut_ord = names(glut_means[order(glut_means, decreasing = T)])
+gaba_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% gaba_markers$gene, colnames(unannot_fetal_agg_marker) %in% gaba_markers$gene], na.rm = T)
+gaba_ord = names(gaba_means[order(gaba_means, decreasing = T)])
+nonN_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% nonN_markers$gene, colnames(unannot_fetal_agg_marker) %in% nonN_markers$gene], na.rm = T)
+nonN_ord = names(nonN_means[order(nonN_means, decreasing = T)])
+
+temp_all_marker_genes = c(divProg_ord, nProg_ord, intProg_ord, glut_ord, gaba_ord, nonN_ord)
+
+#Order the matrix to the marker gene order
+row_index = match(temp_all_marker_genes, rownames(unannot_fetal_agg_marker))
+col_index = match(temp_all_marker_genes, colnames(unannot_fetal_agg_marker))
+unannot_fetal_agg_marker = unannot_fetal_agg_marker[row_index, col_index]
+
+
+
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(organoid_agg_marker))
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+table(fetal_marker_annot_vec)
+
+top_ha = HeatmapAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+row_ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette), show_legend = F)
+
+col_fun = colorRamp2(c( 0,.5, 1), c("blue","white", "red"))
+h_map = Heatmap(organoid_agg_marker, show_row_names = F, show_column_names = F, col = col_fun, name = 'Aggregate coexpression',
+        #clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        #clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', 
+        cluster_rows = F, cluster_columns = F,
+        top_annotation = top_ha, left_annotation = row_ha, show_row_dend = F, show_column_dend = F, use_raster = T,
+        column_title = 'Aggregated organoid coexpression network')
+
+pdf(file = 'graphs/coexpression/agg_organoid_class_marker_coexp_heatmap_v5.pdf', width = 8, height = 6, useDingbats = F)
+draw(h_map)
+dev.off()
+draw(h_map)
+
+
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(fetal_agg_marker))
+fetal_marker_annot_vec[rownames(fetal_agg_marker) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+fetal_marker_annot_vec[rownames(fetal_agg_marker) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(fetal_agg_marker) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(fetal_agg_marker) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(fetal_agg_marker) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(fetal_agg_marker) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+table(fetal_marker_annot_vec)
+
+top_ha = HeatmapAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+row_ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette), show_legend = F)
+
+col_fun = colorRamp2(c( 0,.5, 1), c("blue","white", "red"))
+h_map = Heatmap(fetal_agg_marker, show_row_names = F, show_column_names = F, col = col_fun, name = 'Aggregate coexpression',
+        #clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        #clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', 
+        cluster_rows = F, cluster_columns = F,
+        top_annotation = top_ha, left_annotation = row_ha, show_row_dend = F, show_column_dend = F, use_raster = T,
+        column_title = 'Aggregated fetal coexpression network')
+pdf(file = 'graphs/coexpression/agg_fetal_class_marker_coexp_heatmap_v5.pdf', width = 8, height = 6, useDingbats = F)
+draw(h_map)
+dev.off()
+draw(h_map)
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(unannot_fetal_agg_marker))
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+table(fetal_marker_annot_vec)
+
+top_ha = HeatmapAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+row_ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette), show_legend = F)
+
+
+col_fun = colorRamp2(c( 0,.5, 1), c("blue","white", "red"))
+h_map = Heatmap(unannot_fetal_agg_marker, show_row_names = F, show_column_names = F, col = col_fun, name = 'Aggregate coexpression',
+        #clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        #clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', 
+        cluster_rows = F, cluster_columns = F,
+        top_annotation = top_ha, left_annotation = row_ha, show_row_dend = F, show_column_dend = T, use_raster = T, 
+        column_title = 'Aggregated unannotated fetal coexpression network')
+pdf(file = 'graphs/coexpression/agg_unannot_fetal_class_marker_coexp_heatmap_v5.pdf', width = 8, height = 6, useDingbats = F)
+draw(h_map)
+dev.off()
+draw(h_map)
+```
+
+
+add the aggregate network performance to othe graph
+Use the unannotated fetal aggregate for the graph, the annotated fetal aggregate is circular
+
+```{r}
+organoid_ranked_agg_network_egad_results = as.data.frame(organoid_ranked_agg_network_egad_results)
+org_goterm_avg = colMeans(filter(organoid_ranked_agg_network_egad_results, !grepl('marker', rownames(organoid_ranked_agg_network_egad_results)) ), na.rm = T)
+
+fetal_ranked_agg_network_egad_results = as.data.frame(fetal_ranked_agg_network_egad_results)
+fetal_goterm_avg = colMeans(filter(fetal_ranked_agg_network_egad_results, !grepl('marker', rownames(fetal_ranked_agg_network_egad_results)) ), na.rm = T)
+
+unannot_fetal_ranked_agg_network_egad_results = as.data.frame(unannot_fetal_ranked_agg_network_egad_results)
+unannot_fetal_goterm_avg = colMeans(filter(unannot_fetal_ranked_agg_network_egad_results, !grepl('marker', rownames(unannot_fetal_ranked_agg_network_egad_results)) ), na.rm = T)
+
+unannot_fetal_goterm_avg
+
+
+org_marker_set = filter(organoid_ranked_agg_network_egad_results, grepl('marker', rownames(organoid_ranked_agg_network_egad_results)) & !grepl('micro', rownames(organoid_ranked_agg_network_egad_results))  )
+fetal_marker_set = filter(fetal_ranked_agg_network_egad_results, grepl('marker', rownames(fetal_ranked_agg_network_egad_results)) & !grepl('micro', rownames(fetal_ranked_agg_network_egad_results))  )
+unannot_fetal_marker_set = filter(unannot_fetal_ranked_agg_network_egad_results, 
+                                  grepl('marker', rownames(unannot_fetal_ranked_agg_network_egad_results)) & !grepl('micro', rownames(unannot_fetal_ranked_agg_network_egad_results))  )
+unannot_fetal_marker_set
+
+agg_network_auc = data.frame(goterms = rep(c('avg_goterm_auc','gaba_markers','glut_markers','nonN_markers','nProg_markers','intProg_markers','divProg_markers'), 3), 
+                             sample_label = c(rep('organoid', 7), rep('fetal', 7), rep('unannot_fetal', 7)), 
+                             value = rep(NA, 21))
+
+agg_network_auc$value[agg_network_auc$goterms == 'avg_goterm_auc' & agg_network_auc$sample_label == 'organoid' ] = org_goterm_avg['auc'] 
+agg_network_auc$value[agg_network_auc$goterms == 'avg_goterm_auc' & agg_network_auc$sample_label == 'fetal' ] = fetal_goterm_avg['auc'] 
+agg_network_auc$value[agg_network_auc$goterms == 'avg_goterm_auc' & agg_network_auc$sample_label == 'unannot_fetal' ] = unannot_fetal_goterm_avg['auc'] 
+agg_network_auc$value[grepl('markers',agg_network_auc$goterms)  & agg_network_auc$sample_label == 'organoid' ] = org_marker_set[ ,'auc']
+agg_network_auc$value[grepl('markers',agg_network_auc$goterms)  & agg_network_auc$sample_label == 'fetal' ] = fetal_marker_set[ ,'auc']
+agg_network_auc$value[grepl('markers',agg_network_auc$goterms)  & agg_network_auc$sample_label == 'unannot_fetal' ] = unannot_fetal_marker_set[ ,'auc']
+
+agg_network_auc$goterms = factor(agg_network_auc$goterms, levels = c('avg_goterm_auc','intProg_markers','gaba_markers',
+                                                                                     'glut_markers','nProg_markers','divProg_markers', 'nonN_markers'))
+agg_network_auc$sample_label = factor(agg_network_auc$sample_label, levels = c('fetal','unannot_fetal','organoid'))
+```
+
+```{r}
+
+egad_marker_palette = c('avg_goterm_auc' = 'grey50',
+                        'intProg_markers' = class_palette[16],
+                        'gaba_markers' = class_palette[1], 
+                        'nonN_markers' = class_palette[20],
+                        'glut_markers' = class_palette[14],
+                        'nProg_markers' = class_palette[4],
+                        'divProg_markers' = class_palette[10])
+
+sample_palette = c('fetal'='black', 'unannot_fetal'='grey', 'organoid'='white')
+alpha_values= c('fetal'=1, 'unannot_fetal'=1, 'organoid'=.6)
+
+shape_values = c('fetal' = 23, 'unannot_fetal' = 24,'organoid' = 22  )
+position_values = c( 'fetal' = position_nudge(x = -0.2), 'unannot_fetal' = position_nudge(x = -0.2),'organoid' = position_nudge(x = 0.2))  
+
+
+ggplot(comb_df, aes(x = goterms, y = value, fill = goterms, color = sample_label, alpha = sample_label )) + geom_boxplot() +
+  geom_hline(yintercept = .5, linetype = 'dashed', color = 'red') +
+  geom_point(data = agg_network_auc, aes(x = goterms, y = value, shape = sample_label), 
+             size = 2.5, color = 'black', show.legend = F, position = position_dodge(width = .75), alpha = 1) +
+  ylim(.4 ,1) + ylab('EGAD auroc') +
+  scale_fill_manual(values = egad_marker_palette) + scale_color_manual(values = sample_palette) + 
+  scale_alpha_manual(values = alpha_values, guide = 'none') + scale_shape_manual(values = shape_values) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+
+
+#Just using the go genes in each dataset, and the unannotated fetal aggregate as the aggregate datapoint
+ggsave(filename = 'egad_fetal_organoid_and_agg_networks_just_go_v5.pdf', path = 'graphs/coexpression/', device = 'pdf', 
+       useDingbats = F, height = 5, width = 7)
+
+```
+
+
+
+###############
+Scoring the intra and inter marker set coexpression across datasets
+###############
+
+
+```{r}
+
+all_marker_genes = c(divProg_markers$gene, nProg_markers$gene, intProg_markers$gene, glut_markers$gene, gaba_markers$gene, nonN_markers$gene)
+
+#Organoid network
+organoid_agg_marker = organoid_ranked_aggregate[rownames(organoid_ranked_aggregate) %in% all_marker_genes, colnames(organoid_ranked_aggregate) %in% all_marker_genes ]
+dim(organoid_agg_marker)
+#fetal network
+fetal_agg_marker = fetal_ranked_aggregate[rownames(fetal_ranked_aggregate) %in% all_marker_genes, colnames(fetal_ranked_aggregate) %in% all_marker_genes ]
+dim(fetal_agg_marker)
+#unannot_fetal network
+unannot_fetal_agg_marker = unannot_fetal_ranked_aggregate[rownames(unannot_fetal_ranked_aggregate) %in% all_marker_genes, 
+                                                          colnames(unannot_fetal_ranked_aggregate) %in% all_marker_genes ]
+dim(unannot_fetal_agg_marker)
+
+
+
+score_cross_marker_set_coexp = function(network, marker_set, celltype_label, dataset_label){
+  
+  marker_set = marker_set[marker_set %in% rownames(network)]
+  inter_intra_coexp_ratio = vector(mode = 'numeric', length = length(marker_set))
+  
+  for(i in 1:length(marker_set)){
+  current_gene = marker_set[i]
+  
+  intra_index = rownames(network) %in% marker_set & rownames(network) != current_gene
+  inter_index = !rownames(network) %in% marker_set
+  
+  inter_intra_coexp_ratio[i] = mean(network[current_gene, inter_index ]) / mean(network[current_gene, intra_index ])
+  }
+  
+  network_df = data.frame(score = inter_intra_coexp_ratio, 
+                          celltype_label = rep(celltype_label, length = length(marker_set)),
+                          dataset_label = rep(dataset_label, length = length(marker_set)))
+  
+  return(network_df)
+}
+
+df_1 = score_cross_marker_set_coexp(organoid_agg_marker, nonN_markers$gene, 'Non-Neuronal', 'Aggregate organoid')
+df_2 = score_cross_marker_set_coexp(unannot_fetal_agg_marker, nonN_markers$gene, 'Non-Neuronal', 'Aggregate unannotated fetal')
+
+df_3 = score_cross_marker_set_coexp(organoid_agg_marker, gaba_markers$gene, 'GABAergic', 'Aggregate organoid')
+df_4 = score_cross_marker_set_coexp(unannot_fetal_agg_marker, gaba_markers$gene, 'GABAergic', 'Aggregate unannotated fetal')
+
+df_5 = score_cross_marker_set_coexp(organoid_agg_marker, glut_markers$gene, 'Glutamatergic', 'Aggregate organoid')
+df_6 = score_cross_marker_set_coexp(unannot_fetal_agg_marker, glut_markers$gene, 'Glutamatergic', 'Aggregate unannotated fetal')
+
+df_7 = score_cross_marker_set_coexp(organoid_agg_marker, nProg_markers$gene, 'Neural Progenitor', 'Aggregate organoid')
+df_8 = score_cross_marker_set_coexp(unannot_fetal_agg_marker, nProg_markers$gene, 'Neural Progenitor', 'Aggregate unannotated fetal')
+
+df_9 = score_cross_marker_set_coexp(organoid_agg_marker, divProg_markers$gene, 'Dividing Progenitor', 'Aggregate organoid')
+df_10 = score_cross_marker_set_coexp(unannot_fetal_agg_marker, divProg_markers$gene, 'Dividing Progenitor', 'Aggregate unannotated fetal')
+
+df_11 = score_cross_marker_set_coexp(organoid_agg_marker, intProg_markers$gene, 'Intermediate Progenitor', 'Aggregate organoid')
+df_12 = score_cross_marker_set_coexp(unannot_fetal_agg_marker, intProg_markers$gene, 'Intermediate Progenitor', 'Aggregate unannotated fetal')
+
+
+all_df = bind_rows(df_1, df_2, df_3, df_4, df_5, df_6, df_7, df_8, df_9, df_10, df_11, df_12)
+all_df$celltype_label = factor(all_df$celltype_label, levels = c('Dividing Progenitor','Neural Progenitor','Intermediate Progenitor','Non-Neuronal','Glutamatergic', 'GABAergic'))
+
+
+all_df = all_df %>% group_by(celltype_label) %>% mutate(norm_scores = score - mean(score[dataset_label == 'Aggregate unannotated fetal']))
+all_agg_summary_df = all_df %>% group_by(celltype_label, dataset_label) %>% summarize(mean_score = mean(score)) %>% mutate(dataset_type = 'Aggregate')
+
+
+ggplot(all_df, aes(x = celltype_label, y = score, fill = dataset_label)) + geom_boxplot() +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+ggplot(all_df, aes(x = celltype_label, y = norm_scores, fill = dataset_label)) + geom_boxplot() +
+  scale_x_discrete(guide = guide_axis(n.dodge=2))
+  
+```
+
+Go through all the organoid and unannotated fetal ranked co-expression networks and score 
+```{r}
+all_marker_genes = c(divProg_markers$gene, nProg_markers$gene, intProg_markers$gene, glut_markers$gene, gaba_markers$gene, nonN_markers$gene)
+
+all_ind_org_df = data.frame(score = c(), celltype_label = c(), dataset_label = c() )
+for(i in 1:nrow(all_sample_meta)){
+  #Load coexpression network
+  coexp_file = sprintf('../data/coexpression/organoid/6_26_24_GO_coexp/ranked_%s_coexp.Rdata',all_sample_meta$sample_ids[i])
+  x = load(coexp_file)
+  ranked_network = get(x)
+  rm(x, rank_corr_matrix)
+  gc()
+  
+  current_dataset = all_sample_meta$sample_ids[i]
+  marker_network = ranked_network[rownames(ranked_network) %in% all_marker_genes, colnames(ranked_network ) %in% all_marker_genes ]
+  
+  df_1 = score_cross_marker_set_coexp(marker_network, nonN_markers$gene, 'Non-Neuronal',current_dataset)
+  df_2 = score_cross_marker_set_coexp(marker_network, glut_markers$gene, 'Glutamatergic',current_dataset)
+  df_3 = score_cross_marker_set_coexp(marker_network, gaba_markers$gene, 'GABAergic',current_dataset)
+  df_4 = score_cross_marker_set_coexp(marker_network, nProg_markers$gene, 'Neural Progenitor',current_dataset)
+  df_5 = score_cross_marker_set_coexp(marker_network, divProg_markers$gene, 'Dividing Progenitor',current_dataset)
+  df_6 = score_cross_marker_set_coexp(marker_network, intProg_markers$gene, 'Intermediate Progenitor',current_dataset)
+  
+  all_ind_org_df = bind_rows(all_ind_org_df, df_1, df_2, df_3, df_4, df_5, df_6)
+  print(i)
+
+}
+
+all_ind_org_df = all_ind_org_df  %>% group_by(celltype_label, dataset_label) %>% summarize(mean_score = mean(score)) %>% mutate(dataset_type = 'Organoid')
+all_ind_org_df
+
+
+unannot_ranked_paths = c('../data/coexpression/fetal/8_17_23_GO_coexp/ranked_shi_wang_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_3_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_yu_sun_4_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_1_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_2_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_3_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_trevino_greenleaf_4_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_zhou_lu_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW16_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW18_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW22_coexp.Rdata',
+                 '../data/coexpression/fetal/8_17_23_GO_coexp/ranked_areal_GW22T_coexp.Rdata')
+
+unannot_dataset_names = c('shi_wang','yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4','trevino_1','trevino_2','trevino_3','trevino_4','zhou_lu',
+                          'areal_GW16','areal_GW18','areal_GW22','areal_GW22T')
+
+all_ind_unannot_fetal_df = data.frame(score = c(), celltype_label = c(), dataset_label = c() )
+for(i in 1:length(unannot_ranked_paths)){
+  #Load coexpression network
+  x = load(unannot_ranked_paths[i])
+  ranked_network = get(x)
+  rm(x, rank_corr_matrix)
+  gc()
+  
+  current_dataset = unannot_dataset_names[i]
+  marker_network = ranked_network[rownames(ranked_network) %in% all_marker_genes, colnames(ranked_network ) %in% all_marker_genes ]
+  
+  df_1 = score_cross_marker_set_coexp(marker_network, nonN_markers$gene, 'Non-Neuronal',current_dataset)
+  df_2 = score_cross_marker_set_coexp(marker_network, glut_markers$gene, 'Glutamatergic',current_dataset)
+  df_3 = score_cross_marker_set_coexp(marker_network, gaba_markers$gene, 'GABAergic',current_dataset)
+  df_4 = score_cross_marker_set_coexp(marker_network, nProg_markers$gene, 'Neural Progenitor',current_dataset)
+  df_5 = score_cross_marker_set_coexp(marker_network, divProg_markers$gene, 'Dividing Progenitor',current_dataset)
+  df_6 = score_cross_marker_set_coexp(marker_network, intProg_markers$gene, 'Intermediate Progenitor',current_dataset)
+  
+  all_ind_unannot_fetal_df = bind_rows(all_ind_unannot_fetal_df, df_1, df_2, df_3, df_4, df_5, df_6)
+  print(i)
+}
+
+all_ind_unannot_fetal_df = all_ind_unannot_fetal_df %>% group_by(celltype_label, dataset_label) %>% summarize(mean_score = mean(score)) %>% 
+  mutate(dataset_type = 'Unannotated Primary tissue')
+all_ind_unannot_fetal_df
+
+
+```
+
+```{r}
+
+cross_marker_set_coexp_df = rbind(all_ind_org_df ,all_ind_unannot_fetal_df )
+cross_marker_set_coexp_df$celltype_label = factor(cross_marker_set_coexp_df$celltype_label, 
+                                                  levels = c('Dividing Progenitor','Neural Progenitor','Intermediate Progenitor','Non-Neuronal','Glutamatergic', 'GABAergic'))
+
+cross_marker_set_coexp_df = rbind(cross_marker_set_coexp_df, all_agg_summary_df)
+cross_marker_set_coexp_df = cross_marker_set_coexp_df %>% group_by(celltype_label) %>% 
+  mutate(norm_scores = mean_score - mean_score[dataset_label == 'Aggregate unannotated fetal'])
+
+
+shape_values = c('Aggregate organoid' = 22, 'Aggregate unannotated fetal' = 24 )
+fill_values = c('Organoid' = 'darkorchid', 'Unannotated Primary tissue' = 'firebrick', 'Primary tissue' = 'darkorange')
+
+fill_label = rep('Unannotated Primary tissue', length = nrow(cross_marker_set_coexp_df))
+fill_label[cross_marker_set_coexp_df$dataset_type == 'Organoid'] = 'Organoid'
+fill_label[cross_marker_set_coexp_df$dataset_label == 'Aggregate organoid'] = 'Organoid'
+cross_marker_set_coexp_df$fill_label = fill_label
+
+
+
+ggplot(filter(cross_marker_set_coexp_df, dataset_type != 'Aggregate'), aes(x = celltype_label, y = mean_score, fill = fill_label)) + geom_boxplot(alpha = .5) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(data = filter(cross_marker_set_coexp_df, dataset_type == 'Aggregate'), aes(x = celltype_label, y = mean_score, fill = fill_label, shape = dataset_label), 
+             size = 2.5, color = 'black', show.legend = T, position = position_dodge(width = .75), alpha = 1) + 
+  scale_shape_manual(values = shape_values) +
+  scale_fill_manual(values = fill_values) +
+  ylab('Inter-marker set co-expression score')
+ggsave(filename = 'nonNorm_intermarkerset_coexp_boxplots.pdf', device = 'pdf', path = 'graphs/cross_markerset_coexp/', useDingbats = F, height = 5, width = 7)
+
+
+ggplot(filter(cross_marker_set_coexp_df, dataset_type != 'Aggregate'), aes(x = celltype_label, y = norm_scores, fill = fill_label)) + geom_boxplot(alpha = .5) +
+  scale_x_discrete(guide = guide_axis(n.dodge=2)) +
+  geom_point(data = filter(cross_marker_set_coexp_df, dataset_type == 'Aggregate'), aes(x = celltype_label, y = norm_scores, fill = fill_label, shape = dataset_label), 
+             size = 2.5, color = 'black', show.legend = T, position = position_dodge(width = .75), alpha = 1) + 
+  scale_shape_manual(values = shape_values) +
+  scale_fill_manual(values = fill_values) +
+  ylab('Inter-marker set co-expression score')
+ggsave(filename = 'Norm_intermarkerset_coexp_boxplots.pdf', device = 'pdf', path = 'graphs/cross_markerset_coexp/', useDingbats = F, height = 5, width = 7)
+
+
+
+```
+
+
+```{r}
+
+save(cross_marker_set_coexp_df, file = '../data/cross_markerset_coexp/cross_marker_set_coexp_df.Rdata')
+
+```
+
+
+```{r}
+all_sample_meta
+load( file = '../data/cross_markerset_coexp/cross_marker_set_coexp_df.Rdata')
+
+cross_marker_set_coexp_df %>% filter(celltype_label == 'Glutamatergic' & dataset_type == 'Organoid' ) %>% arrange(desc(norm_scores))
+```
+
+get violin plots of the organoid datasets with the highest and lowest off target co-expression scores
+Only looking at neural organoids
+
+vertesy_bhaduri_3 is the highest
+szebenyi_2 is the lowest
+```{r}
+cross_marker_palette = c('Non-neuronal' = class_palette[20], 'GABAergic' = class_palette[1], 
+                         'Glutamatergic' = class_palette[14])
+
+
+x = load(all_sample_meta$processed_seurat_path[all_sample_meta$sample_ids == 'vertesy_bhaduri_3'])
+dataset = get(x)
+
+
+glut_agg = rowSums(FetchData(dataset, go_glut ))
+glut_quants = quantile(glut_agg, probs = seq(0,1,.05))
+
+cell_filt = glut_agg >=  glut_quants['90%']
+data_sub = dataset@assays$RNA@scale.data[ ,cell_filt]
+gene_filt = rownames(data_sub) %in% c(go_glut, go_gaba, go_nonN)
+data_sub = data_sub[gene_filt, ]
+
+data_sub = reshape2::melt(data_sub)
+marker_label = as.character(data_sub$Var1)
+marker_label[data_sub$Var1 %in% go_glut] = 'Glutamatergic'
+marker_label[data_sub$Var1 %in% go_gaba] = 'GABAergic'
+marker_label[data_sub$Var1 %in% go_nonN] = 'Non-neuronal'
+data_sub$marker_label = marker_label
+
+marker_summary = data_sub %>% group_by(Var2, marker_label) %>% summarize(mean_zscore = mean(value))
+marker_summary$marker_label = factor(marker_summary$marker_label, levels = c('Glutamatergic','GABAergic','Non-neuronal'))
+ggplot(marker_summary , aes(x = marker_label, y = mean_zscore, fill = marker_label)) + geom_violin(scale = 'width') +
+  scale_fill_manual(values = cross_marker_palette) + xlab('MetaMarkers') + ylab('Mean marker expression per cell (mean z-score)') + ggtitle('Top 10% of cells expressing Glutamatergic markers')
+ggsave(filename = 'vertesy_bhaduri_3_best_cross_marker_exp_violins.pdf', path = 'graphs/cross_markerset_coexp/', device = 'pdf', useDingbats = F, height = 4, width = 5)
+
+
+
+x = load(all_sample_meta$processed_seurat_path[all_sample_meta$sample_ids == 'szebenyi_2'])
+dataset = get(x)
+
+
+glut_agg = rowSums(FetchData(dataset, go_glut ))
+glut_quants = quantile(glut_agg, probs = seq(0,1,.05))
+
+cell_filt = glut_agg >=  glut_quants['90%']
+data_sub = dataset@assays$RNA@scale.data[ ,cell_filt]
+gene_filt = rownames(data_sub) %in% c(go_glut, go_gaba, go_nonN)
+data_sub = data_sub[gene_filt, ]
+
+data_sub = reshape2::melt(data_sub)
+marker_label = as.character(data_sub$Var1)
+marker_label[data_sub$Var1 %in% go_glut] = 'Glutamatergic'
+marker_label[data_sub$Var1 %in% go_gaba] = 'GABAergic'
+marker_label[data_sub$Var1 %in% go_nonN] = 'Non-neuronal'
+data_sub$marker_label = marker_label
+
+marker_summary = data_sub %>% group_by(Var2, marker_label) %>% summarize(mean_zscore = mean(value))
+marker_summary$marker_label = factor(marker_summary$marker_label, levels = c('Glutamatergic','GABAergic','Non-neuronal'))
+ggplot(marker_summary , aes(x = marker_label, y = mean_zscore, fill = marker_label)) + geom_violin(scale = 'width') +
+  scale_fill_manual(values = cross_marker_palette) + xlab('MetaMarkers') + ylab('Mean marker expression per cell (mean z-score)') + ggtitle('Top 10% of cells expressing Glutamatergic markers')
+ggsave(filename = 'szebenyi_2_best_cross_marker_exp_violins.pdf', path = 'graphs/cross_markerset_coexp/', device = 'pdf', useDingbats = F, height = 4, width = 5)
+```
+
+
+
+
+
+
+
+
+
