@@ -399,6 +399,39 @@ Need to shave back the size of the co-expression networks, don't need the full 3
 
 
 ```{r agg_coexpression_networks}
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+
+fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_v2.csv.gz")
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+
 
 #Contains the organoid_agg_marker,unannot_fetal_agg_marker coexpression networks
 load(file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/agg_marker_coexp_nets.Rdata' )
@@ -787,7 +820,6 @@ Heatmap(cor_cons_coexp_metrix, name = 'spearman',
 
 
 ## Figure 4D and E
-Need to go back and save the data files
 
 
 ```{r fine_cell_type_specific_coexp}

@@ -112,6 +112,16 @@ fetal_class_palette
     ##        Microglia/Immune                   other 
     ##               "#EDA035"                  "grey"
 
+``` r
+class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal GABAergic marker' = class_palette[1], 
+                         'Fetal Glutamatergic marker' = class_palette[14], 
+                         'Fetal Neural Progenitor marker' = class_palette[4],
+                         'Fetal Intermediate Progenitor marker' = class_palette[16],
+                         'Fetal Dividing Progenitor marker' = class_palette[10],
+                         'Fetal Microglia/Immune marker' = class_palette[18],
+                         'non-marker' = 'white')
+```
+
 ## Figure 1B
 
 ``` r
@@ -530,6 +540,162 @@ ggplot(just_nProg_agg_df, aes(x = class_label, y = agg_exp, fill = class_label))
 Need to shave back the size of the co-expression networks, don’t need
 the full 3.5Gb files for the plots
 
+``` r
+get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
+  
+  if(metric != 'rank'){
+    celltype_data = filter(metamarkers, cell_type == celltype) %>% arrange(desc(!!as.name(metric)))
+    return(celltype_data[1:num_markers, ])}
+  else{
+    return(filter(metamarkers, cell_type == celltype & rank <= num_markers))
+  }
+}
+
+fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_v2.csv.gz")
+
+gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
+glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
+nProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Neural_Progenitor',100, 'rank')
+nonN_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Non-neuronal',100, 'rank')
+intProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Intermediate_Progenitor',100, 'rank')
+divProg_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Dividing_Progenitor',100, 'rank')
+micro_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Microglia/Immune',100, 'rank')
+
+#Ignore duplicates
+all_markers = c( intProg_markers$gene, gaba_markers$gene, glut_markers$gene, nProg_markers$gene, divProg_markers$gene, nonN_markers$gene, micro_markers$gene )
+dups = all_markers[duplicated(all_markers)]
+
+intProg_markers = intProg_markers %>% filter(!gene %in% dups)
+nProg_markers = nProg_markers %>% filter(!gene %in% dups)
+divProg_markers = divProg_markers %>% filter(!gene %in% dups)
+nonN_markers = nonN_markers %>% filter(!gene %in% dups)
+gaba_markers = gaba_markers %>% filter(!gene %in% dups)
+glut_markers = glut_markers %>% filter(!gene %in% dups)
+micro_markers = micro_markers %>% filter(!gene %in% dups)
+
+
+
+#Contains the organoid_agg_marker,unannot_fetal_agg_marker coexpression networks
+load(file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/agg_marker_coexp_nets.Rdata' )
+
+
+#Reordering the genes by their average within marker set co-expression strength
+divProg_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% divProg_markers$gene, colnames(organoid_agg_marker) %in% divProg_markers$gene], na.rm = T)
+divProg_ord = names(divProg_means[order(divProg_means, decreasing = T)])
+nProg_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% nProg_markers$gene, colnames(organoid_agg_marker) %in% nProg_markers$gene], na.rm = T)
+nProg_ord = names(nProg_means[order(nProg_means, decreasing = T)])
+intProg_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% intProg_markers$gene, colnames(organoid_agg_marker) %in% intProg_markers$gene], na.rm = T)
+intProg_ord = names(intProg_means[order(intProg_means, decreasing = T)])
+glut_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% glut_markers$gene, colnames(organoid_agg_marker) %in% glut_markers$gene], na.rm = T)
+glut_ord = names(glut_means[order(glut_means, decreasing = T)])
+gaba_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% gaba_markers$gene, colnames(organoid_agg_marker) %in% gaba_markers$gene], na.rm = T)
+gaba_ord = names(gaba_means[order(gaba_means, decreasing = T)])
+nonN_means = colMeans(organoid_agg_marker[rownames(organoid_agg_marker) %in% nonN_markers$gene, colnames(organoid_agg_marker) %in% nonN_markers$gene], na.rm = T)
+nonN_ord = names(nonN_means[order(nonN_means, decreasing = T)])
+
+temp_all_marker_genes = c(divProg_ord, nProg_ord, intProg_ord, glut_ord, gaba_ord, nonN_ord)
+
+#Order the matrix to the marker gene order
+row_index = match(temp_all_marker_genes, rownames(organoid_agg_marker))
+col_index = match(temp_all_marker_genes, colnames(organoid_agg_marker))
+organoid_agg_marker = organoid_agg_marker[row_index, col_index]
+
+
+
+
+#Reordering the genes by their average within marker set co-expression strength
+divProg_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% divProg_markers$gene, colnames(unannot_fetal_agg_marker) %in% divProg_markers$gene], na.rm = T)
+divProg_ord = names(divProg_means[order(divProg_means, decreasing = T)])
+nProg_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% nProg_markers$gene, colnames(unannot_fetal_agg_marker) %in% nProg_markers$gene], na.rm = T)
+nProg_ord = names(nProg_means[order(nProg_means, decreasing = T)])
+intProg_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% intProg_markers$gene, colnames(unannot_fetal_agg_marker) %in% intProg_markers$gene], na.rm = T)
+intProg_ord = names(intProg_means[order(intProg_means, decreasing = T)])
+glut_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% glut_markers$gene, colnames(unannot_fetal_agg_marker) %in% glut_markers$gene], na.rm = T)
+glut_ord = names(glut_means[order(glut_means, decreasing = T)])
+gaba_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% gaba_markers$gene, colnames(unannot_fetal_agg_marker) %in% gaba_markers$gene], na.rm = T)
+gaba_ord = names(gaba_means[order(gaba_means, decreasing = T)])
+nonN_means = colMeans(unannot_fetal_agg_marker[rownames(unannot_fetal_agg_marker) %in% nonN_markers$gene, colnames(unannot_fetal_agg_marker) %in% nonN_markers$gene], na.rm = T)
+nonN_ord = names(nonN_means[order(nonN_means, decreasing = T)])
+
+temp_all_marker_genes = c(divProg_ord, nProg_ord, intProg_ord, glut_ord, gaba_ord, nonN_ord)
+
+#Order the matrix to the marker gene order
+row_index = match(temp_all_marker_genes, rownames(unannot_fetal_agg_marker))
+col_index = match(temp_all_marker_genes, colnames(unannot_fetal_agg_marker))
+unannot_fetal_agg_marker = unannot_fetal_agg_marker[row_index, col_index]
+
+
+
+
+
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(organoid_agg_marker))
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(organoid_agg_marker) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+
+top_ha = HeatmapAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+row_ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette), show_legend = F)
+
+col_fun = colorRamp2(c( 0,.5, 1), c("blue","white", "red"))
+h_map = Heatmap(organoid_agg_marker, show_row_names = F, show_column_names = F, col = col_fun, name = 'Aggregate coexpression',
+        #clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        #clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', 
+        cluster_rows = F, cluster_columns = F,
+        top_annotation = top_ha, left_annotation = row_ha, show_row_dend = F, show_column_dend = F, use_raster = T,
+        column_title = 'Aggregated organoid coexpression network')
+```
+
+    ## 'magick' package is suggested to install to give better rasterization.
+    ## 
+    ## Set `ht_opt$message = FALSE` to turn off this message.
+
+``` r
+draw(h_map)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/agg_coexpression_networks-1.png)<!-- -->
+
+``` r
+#Get marker annotations
+fetal_marker_annot_vec = rep('non-marker', length = nrow(unannot_fetal_agg_marker))
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% intProg_markers$gene] = 'Fetal Intermediate Progenitor marker'
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% gaba_markers$gene] = 'Fetal GABAergic marker' 
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% glut_markers$gene] = 'Fetal Glutamatergic marker' 
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% nProg_markers$gene] = 'Fetal Neural Progenitor marker' 
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% nonN_markers$gene] = 'Fetal Non-neuronal marker'
+fetal_marker_annot_vec[rownames(unannot_fetal_agg_marker) %in% divProg_markers$gene] = 'Fetal Dividing Progenitor marker'
+
+top_ha = HeatmapAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette))
+row_ha = rowAnnotation(fetal_marker = fetal_marker_annot_vec, 
+                       col = list(fetal_marker = class_marker_palette), show_legend = F)
+
+
+col_fun = colorRamp2(c( 0,.5, 1), c("blue","white", "red"))
+h_map = Heatmap(unannot_fetal_agg_marker, show_row_names = F, show_column_names = F, col = col_fun, name = 'Aggregate coexpression',
+        #clustering_distance_rows = function(m) as.dist(1-m), clustering_distance_columns = function(m) as.dist(1-m),
+        #clustering_method_rows = 'ward.D2', clustering_method_columns = 'ward.D2', 
+        cluster_rows = F, cluster_columns = F,
+        top_annotation = top_ha, left_annotation = row_ha, show_row_dend = F, show_column_dend = T, use_raster = T, 
+        column_title = 'Aggregated unannotated fetal coexpression network')
+```
+
+    ## 'magick' package is suggested to install to give better rasterization.
+    ## 
+    ## Set `ht_opt$message = FALSE` to turn off this message.
+
+``` r
+draw(h_map)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/agg_coexpression_networks-2.png)<!-- -->
+
 ## Figure 3D
 
 ``` r
@@ -809,8 +975,6 @@ Heatmap(cor_cons_coexp_metrix, name = 'spearman',
 ![](figure_plots_with_data_code_files/figure-gfm/presCoexp_correlations-1.png)<!-- -->
 
 ## Figure 4D and E
-
-Need to go back and save the data files
 
 ``` r
 get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
@@ -1138,8 +1302,6 @@ left_sig_plot
 ![](figure_plots_with_data_code_files/figure-gfm/go_summary-2.png)<!-- -->
 
 ## Figure 4G
-
-Need to go back and save the go enrichment results
 
 ``` r
 #Contains the go_enrich_results dataframe
