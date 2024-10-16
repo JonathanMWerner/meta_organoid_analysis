@@ -431,7 +431,7 @@ micro_markers = micro_markers %>% filter(!gene %in% dups)
 
 
 #Contains the organoid_agg_marker,unannot_fetal_agg_marker coexpression networks
-load(file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/agg_marker_coexp_nets.Rdata' )
+load(file = 'data_for_plots/agg_marker_coexp_nets_Fig3B.Rdata' )
 
 
 #Reordering the genes by their average within marker set co-expression strength
@@ -2602,7 +2602,7 @@ ggplot(temp %>% filter(Var1 %in% up_org_genes), aes(x = Var1, y = zscore_exp, fi
 ```{r stress_gene_exp_and_coexp_scores}
 
 
-stress_gene_df = read.csv("data_for_plots/stress_gene_df_SuppFig10ABC.Rdata.csv")
+stress_gene_df = read.csv("data_for_plots/stress_gene_df_SuppFig10ABC.csv")
 glycolysis_genes  = stress_gene_df %>% filter(module == 'GO:0061621 - canonical glycolysis') %>% pull(gene)
 er_stress_genes  = stress_gene_df %>% filter(module == 'organoid_human_ER_stress_module') %>% pull(gene)
 oxidative_stress_genes  = stress_gene_df %>% filter(module == 'organoid_human_oxidative_stress_module') %>% pull(gene)
