@@ -56,7 +56,7 @@ class_marker_palette = c('Fetal Non-neuronal marker' = class_palette[20], 'Fetal
 
 ```{r}
 
-all_sample_meta = read.csv('data_for_plots/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta = read.csv('data_for_plots/all_data_just_meta_seurat_with_addl_features_Fig1B_Fig4BC.csv')
 
 
 #Get palette for the grouped described protocols
@@ -82,7 +82,7 @@ ggplot(org_samp_df, aes(x = Protocol.classification, y = n, fill = Protocol.clas
 ```{r metaMarker_crossvalidation }
 
 #The metaMarker_auroc_df dataframe
-load(file = 'data_for_plots/cross_dataset_auroc_class_results_metaMarker_all_fetal.Rdata')
+load(file = 'data_for_plots/cross_dataset_auroc_class_results_metaMarker_all_fetal_Fig2C.Rdata')
 
 #metaMarker_auroc_df$num_markers = as.character(metaMarker_auroc_df$num_markers )
 metaMarker_auroc_df$num_markers = factor(metaMarker_auroc_df$num_markers, levels = c('10','20','50','100','250','500') )
@@ -101,7 +101,7 @@ ggplot(filter(metaMarker_auroc_df, celltype != 'Microglia/Immune'), aes(x = num_
 ```{r metaMarker_crossvalidation_individual_dataset_markers}
 
 #contains nProg_fetal_1v1_mat, divProg_fetal_1v1_mat, intProg_fetal_1v1_mat, gaba_fetal_1v1_mat, glut_fetal_1v1_mat, nonN_fetal_1v1_mat
-load(file = 'data_for_plots/cell_type_1v1_mats.Rdata')
+load(file = 'data_for_plots/cell_type_1v1_mats_SuppFig1A_Fig2D.Rdata')
 
 #Adding the metaMarker scores to each matrix
 
@@ -246,7 +246,7 @@ ggplot(rank_marker_df, aes(x = Var2, y = rank, color = color_vec)) + geom_boxplo
 
 #contains agg_exp_df
 #File is too large for github
-load(file = 'data_for_plots/cross_dataset_aggregated_exp_metaMarker_all_fetal.Rdata')
+load(file = 'data_for_plots/cross_dataset_aggregated_exp_metaMarker_all_fetal_SuppFig1B_Fig2E.Rdata')
 
 
 
@@ -395,9 +395,6 @@ ggplot(just_nProg_agg_df, aes(x = class_label, y = agg_exp, fill = class_label))
 
 ## Figure 3B
 
-Need to shave back the size of the co-expression networks, don't need the full 3.5Gb files for the plots
-
-
 ```{r agg_coexpression_networks}
 get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metric = 'rank'){
   
@@ -409,7 +406,7 @@ get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metri
   }
 }
 
-fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_v2.csv.gz")
+fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_Fig3B.csv.gz")
 
 gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
 glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
@@ -550,14 +547,14 @@ draw(h_map)
 
 #EGAD scores for all the individual datasets
 #File is too large for github
-load('data_for_plots/organoid_egad_results_ranked_6_26_24.Rdata')
+load('data_for_plots/organoid_egad_results_ranked_6_26_24_Fig3D.Rdata')
 #File is too large for github
-load('data_for_plots/fetal_egad_results_ranked_6_26_24.Rdata')
-load('data_for_plots/unannot_fetal_egad_results_ranked_6_26_24.Rdata')
+load('data_for_plots/fetal_egad_results_ranked_6_26_24_Fig3D.Rdata')
+load('data_for_plots/unannot_fetal_egad_results_ranked_6_26_24_Fig3D.Rdata')
 #EGAD score for the aggregate networks
-load('data_for_plots/ranked_agg_organoid_egad_results_6_26_24.Rdata')
-load('data_for_plots/ranked_agg_fetal_egad_results_6_26_24.Rdata')
-load('data_for_plots/ranked_agg_unannot_fetal_egad_results_6_26_24.Rdata')
+load('data_for_plots/ranked_agg_organoid_egad_results_6_26_24_Fig3D.Rdata')
+load('data_for_plots/ranked_agg_fetal_egad_results_6_26_24_Fig3D.Rdata')
+load('data_for_plots/ranked_agg_unannot_fetal_egad_results_6_26_24_Fig3D.Rdata')
 
 
 #Prepping the individual network results
@@ -666,7 +663,7 @@ ggplot(comb_df, aes(x = goterms, y = value, fill = goterms, color = sample_label
 ```{r cross_marker_set_coexpression}
 
 #Contains the cross_marker_set_coexp_df
-load('data_for_plots/cross_marker_set_coexp_df.Rdata')
+load('data_for_plots/cross_marker_set_coexp_df_SuppFig5B_Fig3E.Rdata')
 
 
 shape_values = c('Aggregate organoid' = 22, 'Aggregate unannotated fetal' = 24 )
@@ -698,10 +695,10 @@ ggplot(filter(cross_marker_set_coexp_df, dataset_type != 'Aggregate'), aes(x = c
 ```{r preserved_coexpress_boxplots}
 
 #Organoid metadat data
-all_sample_meta = read.csv('data_for_plots/all_data_just_meta_seurat_with_addl_features_v2.csv')
+all_sample_meta = read.csv('data_for_plots/all_data_just_meta_seurat_with_addl_features_Fig1B_Fig4BC.csv')
 
 #Contains cross_valid_fetal_cons_coexp_df, unannot_sum_cons_coexp_df
-load(file = 'data_for_plots/fetal_preserve_fetal_coexp_dfs.Rdata' )
+load(file = 'data_for_plots/fetal_preserve_fetal_coexp_dfs_Fig4B_Fig1F_Fig6B.Rdata' )
 
 
 #Taking the average score per marker set, can compare across the datasets
@@ -834,7 +831,7 @@ get_celltype_ranked_markers = function(metamarkers, celltype, num_markers, metri
   }
 }
 
-fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_v2.csv.gz")
+fetal_meta_markers = read_meta_markers("data_for_plots/fetal_meta_markers_Fig3B.csv.gz")
 
 gaba_markers = get_celltype_ranked_markers(fetal_meta_markers, 'GABAergic',100, 'rank')
 glut_markers = get_celltype_ranked_markers(fetal_meta_markers, 'Glutamatergic',100, 'rank')
@@ -858,12 +855,12 @@ micro_markers = micro_markers %>% filter(!gene %in% dups)
 
 
 #contains all_gene_org_pres_fetal_mat, all_gene_fetal_pres_fetal_mat
-load(file = "data_for_plots/all_gene_and_dataset_presCoexp_mats_v3.Rdata")
+load(file = "data_for_plots/all_gene_and_dataset_presCoexp_mats_Fig4DE.Rdata")
 
-pasca_cluster_de = read.csv('data_for_plots/pasca_morpho_screen_org_cluster_DE.csv')
+pasca_cluster_de = read.csv('data_for_plots/pasca_morpho_screen_org_cluster_DE_Fig4DE.csv')
 #Add rank column
 pasca_cluster_de = pasca_cluster_de %>% group_by(cluster) %>% mutate(rank = 1:length(gene) )
-pasca_cluster_annotations = read.csv('data_for_plots/pasca_morpho_cluster_annotations.csv')
+pasca_cluster_annotations = read.csv('data_for_plots/pasca_morpho_cluster_annotations_Fig4DE.csv')
 
 
 n_datasets = nrow(all_sample_meta)
@@ -1027,7 +1024,7 @@ abline(a = 0, b = 1, col = 'red')
 ## Figure 4F
 
 ```{r go_summary}
-load(file = 'data_for_plots/conserved_coexp_pval_df_v5.Rdata')
+load(file = 'data_for_plots/conserved_coexp_pval_df_Fig4F.Rdata')
 
 
 test_df = go_conserved_coexp_df
@@ -1083,7 +1080,7 @@ left_sig_plot
 
 ```{r ecm_barplot}
 #Contains the go_enrich_results dataframe
-load(file = 'data_for_plots/full_data_GO_enrich_bad_org_genes.Rdata')
+load(file = 'data_for_plots/full_data_GO_enrich_bad_org_genes_Fig4G.Rdata')
 
 go_enrich_results_filt = filter(go_enrich_results, N_univ <= 500 & N_univ >= 10) %>% arrange(adj_pvals)
 
@@ -1103,12 +1100,12 @@ ggplot(top_10_go, aes(x = -log10(adj_pvals), y = description)) + geom_bar(stat =
 ```{r organoid_timeseries_presCoexp}
 
 
-load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_nProg_v4.Rdata')
-load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_divProg_v4.Rdata')
-load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_intProg_v4.Rdata')
-load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_gaba_v4.Rdata')
-load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_glut_v4.Rdata')
-load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_nonN_v4.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_nProg_Fig5B.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_divProg_Fig5B.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_intProg_Fig5B.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_gaba_Fig5B.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_glut_Fig5B.Rdata')
+load( file = 'data_for_plots/org_timeseries_consCoexp_results_df_with_1st_trimester_nonN_Fig5B.Rdata')
 
 time_palette = met.brewer("Tam", 8)
 organoid_time_palette = c('day_23' = time_palette[1],'month_1' = time_palette[2],'month_1_5' = time_palette[3],'month_2' = time_palette[4],'month_3' = time_palette[5],
@@ -1202,10 +1199,10 @@ ggplot(nonN_time_df , aes(x = Fetal_timepoint, y = Conserved_Coexpression_score,
 
 ```{r presCoexp_time}
 
-rugen_time = load(file = 'data_for_plots/coexp_time_sample_mats.Rdata')
+rugen_time = load(file = 'data_for_plots/coexp_time_sample_mats_Fig6A.Rdata')
 rugen_time = get(rugen_time)
 
-mac_time = load(file = 'data_for_plots/mac_time_mat.Rdata')
+mac_time = load(file = 'data_for_plots/mac_time_mat_Fig6A.Rdata')
 mac_time = get(mac_time)
 
 colnames(mac_time) = c('10k cells','15k cells','20k cells','25k cells','30k cells','35k cells','40k cells')
@@ -1231,12 +1228,12 @@ ggplot(time_mat_df, aes(x = num_cells, y = mean_time_mins, group = label, color 
   xlab('Number of cells') + ylab('Time (minutes)') + ggtitle('Computing co-expression networks')
 
 
-rugen_genes = load(file = 'data_for_plots/presCoexp_time_sample_mats.Rdata')
+rugen_genes = load(file = 'data_for_plots/presCoexp_time_sample_mats_Fig6A.Rdata')
 rugen_genes = get(rugen_genes)
 colnames(rugen_genes) = seq(1000, 20000, 1000)
 
 
-mac_genes = load(file = 'data_for_plots/mac_time_genes_mat.Rdata')
+mac_genes = load(file = 'data_for_plots/mac_time_genes_mat_Fig6A.Rdata')
 mac_genes = get(mac_genes)
 colnames(mac_genes) = seq(1000, 20000, 1000)
 
@@ -1491,6 +1488,7 @@ ggplot(intProg_time_df , aes(x = Fetal_timepoint, y = AUC, color = Organoid_time
 ```{r organoid_PCA}
 
 #contains the hvg_pc1_eigenvec_matrix
+#File too large for github
 load('data_for_plots/org_eigenvec_matrices_v3.Rdata')
 
 class_palette = met.brewer("Archambault", 20)
