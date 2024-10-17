@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = T)
 ```
 
 
-This markdown file contains the code for generating all plots for the publication: Werner and Gillis, Preservation of Co-expression defines the primary tissue fidelity of human neural organoids, 2024
+This markdown file contains the code for generating all plots for the publication: Werner and Gillis, Meta-analysis of scRNA-seq Co-expression in Human Neural Organoids Reveals High Variability in Recapitulating Primary Tissue, 2024
 
 All data for these plots is provided at https://github.com/JonathanMWerner/meta_organoid_analysis/tree/main/data_for_plots
 

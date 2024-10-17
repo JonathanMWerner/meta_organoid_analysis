@@ -4,8 +4,9 @@ Jonathan Werner
 2024-08-27
 
 This markdown file contains the code for generating all plots for the
-publication: Werner and Gillis, Preservation of Co-expression defines
-the primary tissue fidelity of human neural organoids, 2024
+publication: Werner and Gillis, Meta-analysis of scRNA-seq Co-expression
+in Human Neural Organoids Reveals High Variability in Recapitulating
+Primary Tissue, 2024
 
 All data for these plots is provided at
 <https://github.com/JonathanMWerner/meta_organoid_analysis/tree/main/data_for_plots>
@@ -169,6 +170,7 @@ ggplot(org_samp_df, aes(x = Protocol.classification, y = n, fill = Protocol.clas
 ``` r
 #All umap embeddings are saved in data_for_plots/umap_embeddings_Fig2A.Rdata
 #Contains the embeddings_list list,  n = 37
+#Too large for github
 load('data_for_plots/umap_embeddings_Fig2A.Rdata')
 
 #Here is an example with the GW5 dataset
