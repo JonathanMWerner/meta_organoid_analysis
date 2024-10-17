@@ -20,7 +20,6 @@ library(parallel)
 Fetal data
 ```{r}
 
-
 human_fetal_dataset_names = c( 'linnarsson_GW5','linnarsson_GW5-5','linnarsson_GW6_1','linnarsson_GW6_2','linnarsson_GW6-6_1',
                                'linnarsson_GW6-6_2','linnarsson_GW6-7','linnarsson_GW6-9_1','linnarsson_GW6-9_2','linnarsson_GW6-9_3',
                                'linnarsson_GW6-9_4','linnarsson_GW7','linnarsson_GW7-5','linnarsson_GW8_1','linnarsson_GW8_2',
@@ -31,57 +30,57 @@ human_fetal_dataset_names = c( 'linnarsson_GW5','linnarsson_GW5-5','linnarsson_G
                                'yu_sun_1','yu_sun_2','yu_sun_3','yu_sun_4',
                                'trevino_greenleaf_1','trevino_greenleaf_2','trevino_greenleaf_3','trevino_greenleaf_4')
 
-human_fetal_dataset_paths = list('../data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
-                                 '../data/seurat_objs/individual/linnarsson_GW14_processed.Rdata',
-                                 '../data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata', 
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata',
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
-                                 '../data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
-                                 '../data/seurat_objs/individual/shi_wang_seurat_processed.Rdata', 
-                                 '../data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/yu_sun_GSM5032680_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/yu_sun_GSM5032681_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/yu_sun_GSM5032682_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/yu_sun_GSM5032683_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata',
-                                 '../data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata')
+human_fetal_dataset_paths = list('/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW5_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW5-5_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6_1_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6_2_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-6_1_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-6_2_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-7_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-9_1_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-9_2_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-9_3_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW6-9_4_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW7_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW7-5_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW8_1_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW8_2_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW8_3_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW8-1_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW8-5_1_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW8-5_2_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW9-2_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW9-5_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW10_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW11-5_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW12_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW13_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/linnarsson_GW14_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/fan_fu_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/poliodakis_geschwind_batch1_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/poliodakis_geschwind_batch2_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW14.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW16.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW18_2.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW19_2.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_31.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW20_34.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW22T.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/areal_kreigstein_dataset/merged_with_metadata/GW25.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/shi_wang_seurat_processed.Rdata', 
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/zhou_lu_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/yu_sun_GSM5032680_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/yu_sun_GSM5032681_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/yu_sun_GSM5032682_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/yu_sun_GSM5032683_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch1_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch2_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch3_seurat_processed.Rdata',
+                                 '/home/werner/projects/meta_qc_organoid/data/seurat_objs/individual/trevino_greenleaf_batch4_seurat_processed.Rdata')
 
 names(human_fetal_dataset_paths)= human_fetal_dataset_names 
 human_fetal_dataset_paths
@@ -101,8 +100,11 @@ fetal_class_palette
 ```
 
 ```{r}
+setwd('/home/werner/projects/meta_qc_organoid/code/')
+
 #Number of cells across all fetal datasets
 fetal_cell_num = vector(mode = 'numeric', length = length(human_fetal_dataset_paths))
+embeddings_list = list()
 
 for(i in 1:length(fetal_cell_num)){
 
@@ -120,8 +122,13 @@ for(i in 1:length(fetal_cell_num)){
     DimPlot(dataset, group.by = 'labeled_classes',pt.size = 1.5, raster = T ) + scale_color_manual(values = fetal_class_palette) + 
     theme(legend.position = 'none', axis.text = element_blank(), axis.title = element_blank(), axis.ticks = element_blank(), plot.title = element_blank())
     file_name = sprintf('%s_small_annot_umap_v2.pdf', current_dataset)
-    ggsave(filename = file_name, path = 'graphs/fetal_datasets/small_umaps/', 
-           device = 'pdf', useDingbats = F, height = 2, width = 2)
+    #ggsave(filename = file_name, path = 'graphs/fetal_datasets/small_umaps/', 
+    #       device = 'pdf', useDingbats = F, height = 2, width = 2)
+    
+    umap_embeddings = as.data.frame(dataset@reductions$umap@cell.embeddings)
+    umap_embeddings$annotation = dataset$labeled_classes
+    umap_embeddings$color = fetal_class_palette[umap_embeddings$annotation]
+    embeddings_list[[current_dataset]] = umap_embeddings
   }
   
   #Cell number
@@ -164,6 +171,15 @@ sum(fetal_cell_num[1:26])
 sum(fetal_cell_num[c(27:30, 33:38, 41)])
 #unannotated
 sum(fetal_cell_num[c(31, 32, 39, 40, 42:51)])
+
+```
+
+Save the embeddings
+```{r}
+
+names(embeddings_list)
+
+save(embeddings_list, file = '/home/werner/projects/meta_qc_organoid/final_plots/meta_organoid_figure_plots/data_for_plots/umap_embeddings_Fig2A.Rdata')
 
 ```
 

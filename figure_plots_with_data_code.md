@@ -164,6 +164,20 @@ ggplot(org_samp_df, aes(x = Protocol.classification, y = n, fill = Protocol.clas
 
 ![](figure_plots_with_data_code_files/figure-gfm/unnamed-chunk-1-1.png)<!-- -->
 
+## Figure 2A
+
+``` r
+#All umap embeddings are saved in data_for_plots/umap_embeddings_Fig2A.Rdata
+#Contains the embeddings_list list,  n = 37
+load('data_for_plots/umap_embeddings_Fig2A.Rdata')
+
+#Here is an example with the GW5 dataset
+ggplot(embeddings_list[[1]], aes(x = UMAP_1, y = UMAP_2, color = annotation)) + geom_point() +
+  scale_color_manual(values = fetal_class_palette)
+```
+
+![](figure_plots_with_data_code_files/figure-gfm/umaps-1.png)<!-- -->
+
 ## Figure 2C
 
 ``` r
